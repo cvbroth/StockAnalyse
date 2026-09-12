@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import re
 import sys
 import time
 from datetime import date, datetime
@@ -46,25 +47,114 @@ PROJECT_DIR = APP_DIR.parent
 DEFAULT_DB_PATH = PROJECT_DIR / "data" / "market.db"
 
 
+class EndpointRateLimiter:
+    """按接口独立控制请求频率，并从服务端错误中自动收紧限制。"""
+
+    def __init__(self, label: str, calls_per_minute: float) -> None:
+        self.label = label
+        self.calls_per_minute = calls_per_minute
+        self.last_request_started: float | None = None
+
+    @property
+    def interval_seconds(self) -> float:
+        if self.calls_per_minute <= 0:
+            return 0.0
+        base_interval = 60.0 / self.calls_per_minute
+        # 留少量余量，避免客户端与服务端计时边界不同而再次触发限频。
+        safety_buffer = min(1.0, max(0.1, base_interval * 0.02))
+        return base_interval + safety_buffer
+
+    def wait_before_request(self) -> None:
+        interval = self.interval_seconds
+        if interval <= 0:
+            self.last_request_started = time.monotonic()
+            return
+
+        now = time.monotonic()
+        if self.last_request_started is not None:
+            remaining = interval - (now - self.last_request_started)
+            if remaining > 0:
+                print(
+                    f"{self.label} 频率控制：等待 {remaining:.1f} 秒"
+                    f"（每分钟最多 {self.calls_per_minute:g} 次）……",
+                    flush=True,
+                )
+                time.sleep(remaining)
+        self.last_request_started = time.monotonic()
+
+    def adapt_to_error(self, error: Exception) -> bool:
+        message = str(error)
+        lowered = message.lower()
+        is_rate_limit = (
+            "频率超限" in message
+            or "rate limit" in lowered
+            or "too many requests" in lowered
+        )
+        if not is_rate_limit:
+            return False
+
+        match = re.search(r"(\d+(?:\.\d+)?)\s*次\s*/\s*分钟", message)
+        detected_limit = float(match.group(1)) if match else 1.0
+        if self.calls_per_minute <= 0 or detected_limit < self.calls_per_minute:
+            self.calls_per_minute = detected_limit
+            print(
+                f"{self.label} 已从服务端错误识别到频率限制："
+                f"每分钟最多 {detected_limit:g} 次。",
+                file=sys.stderr,
+                flush=True,
+            )
+        return True
+
+    def estimate_seconds(self, request_count: int) -> float:
+        return max(0, request_count - 1) * self.interval_seconds
+
+
+def format_duration(seconds: float) -> str:
+    total_minutes = max(0, math.ceil(seconds / 60.0))
+    hours, minutes = divmod(total_minutes, 60)
+    if hours and minutes:
+        return f"{hours} 小时 {minutes} 分钟"
+    if hours:
+        return f"{hours} 小时"
+    return f"{minutes} 分钟"
+
+
 def call_with_retries(
     label: str,
     operation: Callable[[], Any],
     retries: int,
+    rate_limiter: EndpointRateLimiter | None = None,
 ) -> Any:
     last_error: Exception | None = None
     for attempt in range(1, retries + 1):
         try:
+            if rate_limiter is not None:
+                rate_limiter.wait_before_request()
             return operation()
         except Exception as exc:
             last_error = exc
             if attempt < retries:
-                wait_seconds = min(20.0, 1.5 * (2 ** (attempt - 1)))
-                print(
-                    f"{label} 第 {attempt} 次失败，{wait_seconds:.1f} 秒后重试：{exc}",
-                    file=sys.stderr,
-                    flush=True,
+                is_rate_limit = (
+                    rate_limiter.adapt_to_error(exc)
+                    if rate_limiter is not None
+                    else False
                 )
-                time.sleep(wait_seconds)
+                if is_rate_limit:
+                    print(
+                        f"{label} 第 {attempt} 次触发限频，"
+                        "将按服务端频率等待后重试。",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                else:
+                    wait_seconds = min(20.0, 1.5 * (2 ** (attempt - 1)))
+                    print(
+                        f"{label} 第 {attempt} 次失败，"
+                        f"{wait_seconds:.1f} 秒后重试：{exc}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    time.sleep(wait_seconds)
     raise RuntimeError(f"{label} 获取失败（已重试 {retries} 次）：{last_error}")
 
 
@@ -334,11 +424,14 @@ def fetch_one_trade_date(
     retries: int,
     pause: float,
     minimum_rows: int,
+    daily_rate_limiter: EndpointRateLimiter,
+    factor_rate_limiter: EndpointRateLimiter,
 ) -> tuple[pd.DataFrame, int, int]:
     daily = call_with_retries(
         f"{trade_date} 全市场日线",
         lambda: pro.daily(trade_date=trade_date),
         retries,
+        daily_rate_limiter,
     )
     if pause > 0:
         time.sleep(pause)
@@ -346,6 +439,7 @@ def fetch_one_trade_date(
         f"{trade_date} 全市场复权因子",
         lambda: pro.adj_factor(trade_date=trade_date),
         retries,
+        factor_rate_limiter,
     )
     if pause > 0:
         time.sleep(pause)
@@ -435,6 +529,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--pause", type=float, default=0.15, help="两次 Tushare 请求之间的间隔秒数"
     )
     parser.add_argument(
+        "--daily-per-minute",
+        type=float,
+        default=50.0,
+        help="daily 接口每分钟调用上限；0 表示不主动限速",
+    )
+    parser.add_argument(
+        "--adj-factor-per-minute",
+        type=float,
+        default=1.0,
+        help="adj_factor 接口每分钟调用上限；默认按低频权限每分钟 1 次",
+    )
+    parser.add_argument(
         "--min-daily-rows",
         type=int,
         default=1000,
@@ -463,6 +569,12 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         parser.error("--retries 至少为 1")
     if args.pause < 0 or not math.isfinite(args.pause):
         parser.error("--pause 必须是非负有限数")
+    if args.daily_per_minute < 0 or not math.isfinite(args.daily_per_minute):
+        parser.error("--daily-per-minute 必须是非负有限数")
+    if args.adj_factor_per_minute < 0 or not math.isfinite(
+        args.adj_factor_per_minute
+    ):
+        parser.error("--adj-factor-per-minute 必须是非负有限数")
     if args.min_daily_rows < 1:
         parser.error("--min-daily-rows 至少为 1")
 
@@ -502,6 +614,21 @@ def run_update(args: argparse.Namespace) -> int:
             f"本次需更新 {len(targets)} 个交易日：{targets[0]} ～ {targets[-1]}",
             flush=True,
         )
+        daily_rate_limiter = EndpointRateLimiter(
+            "daily 接口", args.daily_per_minute
+        )
+        factor_rate_limiter = EndpointRateLimiter(
+            "adj_factor 接口", args.adj_factor_per_minute
+        )
+        estimated_seconds = factor_rate_limiter.estimate_seconds(len(targets))
+        if estimated_seconds > 0:
+            print(
+                f"当前 adj_factor 设置为每分钟最多 "
+                f"{args.adj_factor_per_minute:g} 次，"
+                f"预计接口等待时间至少 {format_duration(estimated_seconds)}。",
+                flush=True,
+            )
+            print("可随时按 Ctrl+C 中断；重新运行会从未完成日期续传。", flush=True)
         pro = create_tushare_client(args.token_env, args.env_file)
         run_id = start_update_run(connection, mode, len(targets))
 
@@ -514,6 +641,8 @@ def run_update(args: argparse.Namespace) -> int:
                     args.retries,
                     args.pause,
                     args.min_daily_rows,
+                    daily_rate_limiter,
+                    factor_rate_limiter,
                 )
                 with connection:
                     stored = upsert_daily_bars(connection, frame)

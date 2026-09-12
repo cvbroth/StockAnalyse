@@ -20,6 +20,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--retries", type=int, default=3)
+    parser.add_argument("--daily-per-minute", type=float, default=50.0)
+    parser.add_argument("--adj-factor-per-minute", type=float, default=1.0)
     parser.add_argument("--token-env", default="TUSHARE_TOKEN")
     parser.add_argument("--env-file", type=Path, default=PROJECT_DIR / ".env")
     parser.add_argument("--percentile-cutoff", type=float, default=0.70)
@@ -37,6 +39,10 @@ def main(argv: list[str] | None = None) -> int:
         str(args.db),
         "--retries",
         str(args.retries),
+        "--daily-per-minute",
+        str(args.daily_per_minute),
+        "--adj-factor-per-minute",
+        str(args.adj_factor_per_minute),
         "--token-env",
         args.token_env,
         "--env-file",
