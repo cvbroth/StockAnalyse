@@ -9,8 +9,9 @@
 
     python app/update_market.py --daily
 
-环境变量 ``TUSHARE_TOKEN`` 必须包含有效的 Tushare token。个股日线和
-复权因子按交易日批量获取；股票名称及沪深300交易日历使用 AKShare 腾讯链路。
+程序优先从环境变量 ``TUSHARE_TOKEN`` 读取凭证，其次读取项目根目录的
+``.env``。个股日线和复权因子按交易日批量获取；股票名称及沪深300交易日历
+使用 AKShare 腾讯链路。
 """
 
 from __future__ import annotations
@@ -166,19 +167,67 @@ def fetch_hs300_index(retries: int, end_date: str) -> pd.DataFrame:
     )
 
 
-def create_tushare_client(token_environment: str) -> Any:
+def read_dotenv_value(path: Path, variable_name: str) -> str | None:
+    """读取简单 KEY=VALUE 格式；不修改当前进程的环境变量。"""
+
+    if not path.is_file():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError as exc:
+        raise RuntimeError(f"无法读取 .env 文件 {path}: {exc}") from exc
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[7:].lstrip()
+        key, separator, raw_value = stripped.partition("=")
+        if not separator or key.strip() != variable_name:
+            continue
+        value = raw_value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+        return value.strip()
+    return None
+
+
+def resolve_tushare_token(
+    token_environment: str,
+    env_file: Path,
+) -> tuple[str, str]:
     token = os.environ.get(token_environment, "").strip()
-    if not token:
-        raise RuntimeError(
-            f"未设置环境变量 {token_environment}。当前 PowerShell 可执行：\n"
-            f'$env:{token_environment}="你的Tushare Token"'
-        )
+    if token:
+        return token, f"环境变量 {token_environment}"
+
+    resolved_env_file = env_file.expanduser().resolve()
+    token = (read_dotenv_value(resolved_env_file, token_environment) or "").strip()
+    if token:
+        return token, str(resolved_env_file)
+
+    raise RuntimeError(
+        f"未找到 {token_environment}。已经检查：\n"
+        f"1. 当前进程环境变量 {token_environment}\n"
+        f"2. 配置文件 {resolved_env_file}\n"
+        "Linux/macOS 可执行：export TUSHARE_TOKEN='你的Token'\n"
+        "Windows PowerShell 可执行：$env:TUSHARE_TOKEN='你的Token'\n"
+        f"也可以在 {resolved_env_file} 中写入：\n"
+        f"{token_environment}=你的Token"
+    )
+
+
+def create_tushare_client(token_environment: str, env_file: Path) -> Any:
+    token, source = resolve_tushare_token(token_environment, env_file)
     try:
         import tushare as ts
     except ImportError as exc:
         raise RuntimeError(
             "缺少 tushare，请执行：python -m pip install -U tushare"
         ) from exc
+    print(f"Tushare Token 已从 {source} 读取。", flush=True)
     return ts.pro_api(token)
 
 
@@ -396,6 +445,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="TUSHARE_TOKEN",
         help="保存 Tushare token 的环境变量名",
     )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=PROJECT_DIR / ".env",
+        help="环境配置文件路径；默认读取项目根目录 .env",
+    )
     return parser
 
 
@@ -447,7 +502,7 @@ def run_update(args: argparse.Namespace) -> int:
             f"本次需更新 {len(targets)} 个交易日：{targets[0]} ～ {targets[-1]}",
             flush=True,
         )
-        pro = create_tushare_client(args.token_env)
+        pro = create_tushare_client(args.token_env, args.env_file)
         run_id = start_update_run(connection, mode, len(targets))
 
         for position, trade_date in enumerate(targets, start=1):

@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--token-env", default="TUSHARE_TOKEN")
+    parser.add_argument("--env-file", type=Path, default=PROJECT_DIR / ".env")
     parser.add_argument("--percentile-cutoff", type=float, default=0.70)
     parser.add_argument("--include-st", action="store_true")
     return parser
@@ -38,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
         str(args.retries),
         "--token-env",
         args.token_env,
+        "--env-file",
+        str(args.env_file),
     ]
     screen_command = [
         sys.executable,

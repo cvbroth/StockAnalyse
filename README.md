@@ -29,16 +29,45 @@ a_share_screener/
 python -m pip install -r requirements.txt
 ```
 
-## 2. 设置 Tushare token
+## 2. 设置 Tushare Token
 
-当前 PowerShell 会话中设置：
+可以复制项目提供的模板，再编辑 `.env`：
+
+```bash
+cp .env.example .env
+```
+
+文件内容为：
+
+```dotenv
+TUSHARE_TOKEN=你的Tushare Token
+```
+
+Linux服务器可以限制该文件只能由当前用户读取：
+
+```bash
+chmod 600 .env
+```
+
+程序读取顺序为：
+
+1. 当前进程的 `TUSHARE_TOKEN` 环境变量。
+2. 项目根目录的 `.env` 文件。
+
+也可以不创建文件，直接在当前终端临时设置。Windows PowerShell：
 
 ```powershell
 $env:TUSHARE_TOKEN="你的 Tushare Token"
 ```
 
-程序只读取环境变量，不会把 token 写入源码或数据库。初始化前请确认账号具有
-`daily` 和 `adj_factor` 的调用权限。
+Linux或macOS：
+
+```bash
+export TUSHARE_TOKEN="你的 Tushare Token"
+```
+
+`.env` 已被 `.gitignore` 排除，不会加入Git提交。程序不会把Token写入源码或
+数据库。初始化前请确认账号具有 `daily` 和 `adj_factor` 的调用权限。
 
 ## 3. 第一次初始化
 
