@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """批量更新 A 股本地行情库。
 
-首次初始化：
+首次初始化时二选一：
 
-    python app/update_market.py --init --days 250
+    python app/update_market.py --init --tx --days 250
+    python app/update_market.py --init --tushare --days 250
 
 以后每个交易日收盘后：
 
     python app/update_market.py --daily
 
-程序优先从环境变量 ``TUSHARE_TOKEN`` 读取凭证，其次读取项目根目录的
-``.env``。个股日线和复权因子按交易日批量获取；股票名称及沪深300交易日历
-使用 AKShare 腾讯链路。
+数据库会记住初始化数据源，日常更新自动沿用且不允许切换。腾讯模式直接获取
+逐只股票的前复权行情；Tushare 模式按交易日获取全市场未复权日线和复权因子。
+股票名称及沪深300交易日历统一使用 AKShare 腾讯链路。
 """
 
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import math
 import os
 import re
@@ -29,16 +31,22 @@ from typing import Any, Callable
 import pandas as pd
 
 from market_db import (
+    bind_data_provider,
     completed_trade_dates,
+    completed_security_codes,
     connect_database,
     database_stats,
     finish_update_run,
+    infer_data_provider,
+    replace_daily_bars_for_code,
+    set_security_update_status,
     set_trade_date_status,
     start_update_run,
     upsert_daily_bars,
     upsert_index_bars,
     upsert_securities,
 )
+from providers.tencent import fetch_qfq_history, supports_code
 
 
 HS300_SYMBOL = "sh000300"
@@ -64,6 +72,11 @@ class EndpointRateLimiter:
         safety_buffer = min(1.0, max(0.1, base_interval * 0.02))
         return base_interval + safety_buffer
 
+    def describe_limit(self) -> str:
+        if 0 < self.calls_per_minute < 1:
+            return f"每小时最多 {self.calls_per_minute * 60:g} 次"
+        return f"每分钟最多 {self.calls_per_minute:g} 次"
+
     def wait_before_request(self) -> None:
         interval = self.interval_seconds
         if interval <= 0:
@@ -76,7 +89,7 @@ class EndpointRateLimiter:
             if remaining > 0:
                 print(
                     f"{self.label} 频率控制：等待 {remaining:.1f} 秒"
-                    f"（每分钟最多 {self.calls_per_minute:g} 次）……",
+                    f"（{self.describe_limit()}）……",
                     flush=True,
                 )
                 time.sleep(remaining)
@@ -93,13 +106,23 @@ class EndpointRateLimiter:
         if not is_rate_limit:
             return False
 
-        match = re.search(r"(\d+(?:\.\d+)?)\s*次\s*/\s*分钟", message)
-        detected_limit = float(match.group(1)) if match else 1.0
+        minute_match = re.search(
+            r"(\d+(?:\.\d+)?)\s*次\s*/\s*分钟", message
+        )
+        hour_match = re.search(
+            r"(\d+(?:\.\d+)?)\s*次\s*/\s*小时", message
+        )
+        if minute_match:
+            detected_limit = float(minute_match.group(1))
+        elif hour_match:
+            detected_limit = float(hour_match.group(1)) / 60.0
+        else:
+            detected_limit = 1.0
         if self.calls_per_minute <= 0 or detected_limit < self.calls_per_minute:
             self.calls_per_minute = detected_limit
             print(
                 f"{self.label} 已从服务端错误识别到频率限制："
-                f"每分钟最多 {detected_limit:g} 次。",
+                f"{self.describe_limit()}。",
                 file=sys.stderr,
                 flush=True,
             )
@@ -463,7 +486,8 @@ def select_target_dates(
         if not completed:
             raise RuntimeError(
                 "数据库尚未初始化。请先执行："
-                "python app/update_market.py --init --days 250"
+                "python app/update_market.py --init --tx --days 250，"
+                "或将 --tx 改为 --tushare"
             )
         latest = max(completed)
         recent_unfinished = [
@@ -486,12 +510,26 @@ def show_status(db_path: Path) -> int:
     finally:
         connection.close()
     print(f"数据库：{db_path.expanduser().resolve()}")
+    provider_labels = {
+        "tx": "腾讯前复权",
+        "tushare": "Tushare 未复权日线 + 复权因子",
+        "mixed": "混合来源（不允许继续更新）",
+        None: "尚未初始化",
+    }
+    provider_label = provider_labels.get(
+        stats["data_provider"], stats["data_provider"]
+    )
+    print(f"初始化数据源：{provider_label}")
     print(f"股票列表：{stats['securities']} 只")
     print(f"日线记录：{stats['daily_rows']} 行，{stats['daily_codes']} 只股票")
     print(f"日期范围：{stats['daily_start']} ～ {stats['daily_end']}")
-    print(f"完整交易日：{stats['completed_dates']} 个")
-    print(f"最近完整日期：{stats['latest_completed_date']}")
-    print(f"失败日期：{stats['failed_dates']} 个")
+    if stats["data_provider"] == "tx":
+        print(f"腾讯完整股票：{stats['completed_securities']} 只")
+        print(f"腾讯失败股票：{stats['failed_securities']} 只")
+    else:
+        print(f"完整交易日：{stats['completed_dates']} 个")
+        print(f"最近完整日期：{stats['latest_completed_date']}")
+        print(f"失败日期：{stats['failed_dates']} 个")
     return 0
 
 
@@ -508,6 +546,15 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--init", action="store_true", help="首次初始化或断点续传")
     mode.add_argument("--daily", action="store_true", help="补齐初始化后的缺失交易日")
     mode.add_argument("--status", action="store_true", help="只查看数据库状态")
+    provider = parser.add_mutually_exclusive_group()
+    provider.add_argument(
+        "--tx", action="store_true", help="初始化时选择腾讯前复权数据源"
+    )
+    provider.add_argument(
+        "--tushare",
+        action="store_true",
+        help="初始化时选择 Tushare 日线和复权因子",
+    )
     parser.add_argument(
         "--db", type=Path, default=DEFAULT_DB_PATH, help="SQLite 数据库路径"
     )
@@ -525,6 +572,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="强制重取最近 N 个交易日，用于修复数据",
     )
     parser.add_argument("--retries", type=int, default=3, help="接口重试次数")
+    parser.add_argument(
+        "--tx-workers",
+        type=int,
+        default=6,
+        help="腾讯模式并发下载股票数",
+    )
+    parser.add_argument(
+        "--tx-timeout",
+        type=float,
+        default=15.0,
+        help="腾讯单次请求超时秒数",
+    )
     parser.add_argument(
         "--pause", type=float, default=0.15, help="两次 Tushare 请求之间的间隔秒数"
     )
@@ -561,12 +620,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if args.init and not (args.tx or args.tushare):
+        parser.error("--init 必须同时选择 --tx 或 --tushare")
+    if not args.init and (args.tx or args.tushare):
+        parser.error(
+            "--tx/--tushare 只能在初始化时选择；日常更新会自动沿用数据库数据源"
+        )
     if args.days < 80:
         parser.error("--days 至少为 80；建议使用 250")
     if args.repair_days < 0:
         parser.error("--repair-days 不能为负数")
     if args.retries < 1:
         parser.error("--retries 至少为 1")
+    if args.tx_workers < 1:
+        parser.error("--tx-workers 至少为 1")
+    if args.tx_timeout <= 0 or not math.isfinite(args.tx_timeout):
+        parser.error("--tx-timeout 必须是正有限数")
     if args.pause < 0 or not math.isfinite(args.pause):
         parser.error("--pause 必须是非负有限数")
     if args.daily_per_minute < 0 or not math.isfinite(args.daily_per_minute):
@@ -579,6 +648,165 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         parser.error("--min-daily-rows 至少为 1")
 
 
+def resolve_update_provider(
+    connection: Any,
+    args: argparse.Namespace,
+) -> str:
+    if args.init:
+        requested = "tx" if args.tx else "tushare"
+        return bind_data_provider(connection, requested)
+
+    existing = infer_data_provider(connection)
+    if existing is None:
+        raise RuntimeError(
+            "数据库尚未初始化。请先使用 --init --tx 或 --init --tushare。"
+        )
+    if existing == "mixed":
+        raise RuntimeError(
+            "数据库包含混合来源，无法确定日常更新数据源；请新建数据库重新初始化。"
+        )
+    return bind_data_provider(connection, existing)
+
+
+def run_tencent_update(
+    connection: Any,
+    args: argparse.Namespace,
+    securities: list[tuple[str, str]],
+    index_frame: pd.DataFrame,
+) -> int:
+    available_dates = index_frame["trade_date"].astype(str).tolist()
+    requested_dates = available_dates[-args.days :]
+    if not requested_dates:
+        raise RuntimeError("腾讯初始化范围内没有可用交易日")
+    start_date, end_date = requested_dates[0], requested_dates[-1]
+
+    completed = completed_security_codes(
+        connection, "tx", start_date, end_date
+    )
+    if args.repair_days > 0:
+        completed = set()
+        print(
+            "腾讯前复权是动态序列；--repair-days 将重新获取全部股票的完整窗口。",
+            flush=True,
+        )
+    supported_securities = [
+        (code, name) for code, name in securities if supports_code(code)
+    ]
+    unsupported_count = len(securities) - len(supported_securities)
+    targets = [
+        (code, name)
+        for code, name in supported_securities
+        if code not in completed
+    ]
+    if unsupported_count:
+        print(
+            f"腾讯模式当前只更新沪深股票；跳过北交所 {unsupported_count} 只。",
+            flush=True,
+        )
+    if not targets:
+        print("腾讯前复权数据库已经是最新状态，没有待更新股票。")
+        return 0
+
+    mode = "init:tx" if args.init else "daily:tx"
+    print(
+        f"腾讯前复权模式：{start_date} ～ {end_date}，"
+        f"待更新 {len(targets)}/{len(supported_securities)} 只沪深股票，"
+        f"并发数 {args.tx_workers}。",
+        flush=True,
+    )
+    print("可随时按 Ctrl+C 中断；重新运行会从未完成股票续传。", flush=True)
+
+    run_id = start_update_run(connection, mode, len(targets))
+    successes = 0
+    rows_written = 0
+    failures: list[str] = []
+    executor = ThreadPoolExecutor(max_workers=args.tx_workers)
+    future_to_stock = {
+        executor.submit(
+            fetch_qfq_history,
+            code,
+            start_date,
+            end_date,
+            args.retries,
+            args.tx_timeout,
+        ): (code, name)
+        for code, name in targets
+    }
+    try:
+        for position, future in enumerate(as_completed(future_to_stock), start=1):
+            code, name = future_to_stock[future]
+            try:
+                frame = future.result()
+                with connection:
+                    stored = replace_daily_bars_for_code(connection, frame)
+                    set_security_update_status(
+                        connection,
+                        "tx",
+                        code,
+                        "complete",
+                        start_date,
+                        end_date,
+                        stored_rows=stored,
+                    )
+                successes += 1
+                rows_written += stored
+            except Exception as exc:
+                message = str(exc)
+                failures.append(f"{code} {name}: {message}")
+                with connection:
+                    set_security_update_status(
+                        connection,
+                        "tx",
+                        code,
+                        "failed",
+                        start_date,
+                        end_date,
+                        error=message,
+                    )
+                print(f"    {code} {name} 失败：{message}", file=sys.stderr)
+
+            if position % 50 == 0 or position == len(targets):
+                print(
+                    f"进度 {position}/{len(targets)}，成功 {successes}，"
+                    f"失败 {len(failures)}，写入 {rows_written} 行",
+                    flush=True,
+                )
+    except BaseException as exc:
+        for future in future_to_stock:
+            future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+        status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
+        finish_update_run(
+            connection,
+            run_id,
+            status,
+            successes,
+            rows_written,
+            "用户中断" if isinstance(exc, KeyboardInterrupt) else str(exc),
+        )
+        raise
+    else:
+        executor.shutdown(wait=True)
+
+    status = "complete" if not failures else "partial"
+    finish_update_run(
+        connection,
+        run_id,
+        status,
+        successes,
+        rows_written,
+        "\n".join(failures) if failures else None,
+    )
+    print(
+        f"腾讯更新结束：成功 {successes}/{len(targets)} 只股票，"
+        f"写入 {rows_written} 行。"
+    )
+    if failures:
+        print("失败股票已记录；重新执行同一命令会自动续传。", file=sys.stderr)
+        return 1
+    return 0
+
+
 def run_update(args: argparse.Namespace) -> int:
     connection = connect_database(args.db)
     run_id: int | None = None
@@ -586,6 +814,9 @@ def run_update(args: argparse.Namespace) -> int:
     rows_written = 0
     failures: list[str] = []
     try:
+        provider = resolve_update_provider(connection, args)
+        provider_label = "腾讯前复权" if provider == "tx" else "Tushare"
+        print(f"数据库数据源：{provider_label}", flush=True)
         print("正在更新股票列表和腾讯沪深300交易日历……", flush=True)
         securities = fetch_stock_list(args.retries)
         index_frame = fetch_hs300_index(args.retries, args.end_date)
@@ -595,6 +826,9 @@ def run_update(args: argparse.Namespace) -> int:
         with connection:
             upsert_securities(connection, securities)
             upsert_index_bars(connection, index_frame, HS300_SYMBOL)
+
+        if provider == "tx":
+            return run_tencent_update(connection, args, securities, index_frame)
 
         available_dates = index_frame["trade_date"].astype(str).tolist()
         completed = completed_trade_dates(connection)

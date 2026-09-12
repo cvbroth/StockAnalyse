@@ -10,7 +10,7 @@ from typing import Any, Iterable
 import pandas as pd
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 
 def now_iso() -> str:
@@ -86,6 +86,18 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS security_update_status (
+            provider TEXT NOT NULL,
+            code TEXT NOT NULL,
+            status TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            stored_rows INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (provider, code)
+        );
+
         CREATE TABLE IF NOT EXISTS update_runs (
             run_id INTEGER PRIMARY KEY AUTOINCREMENT,
             mode TEXT NOT NULL,
@@ -104,6 +116,59 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         (SCHEMA_VERSION,),
     )
     connection.commit()
+
+
+def get_metadata(connection: sqlite3.Connection, key: str) -> str | None:
+    row = connection.execute(
+        "SELECT value FROM metadata WHERE key=?", (key,)
+    ).fetchone()
+    return str(row[0]) if row is not None else None
+
+
+def set_metadata(connection: sqlite3.Connection, key: str, value: str) -> None:
+    connection.execute(
+        """
+        INSERT INTO metadata(key, value) VALUES(?, ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """,
+        (key, value),
+    )
+
+
+def infer_data_provider(connection: sqlite3.Connection) -> str | None:
+    configured = get_metadata(connection, "data_provider")
+    sources = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT DISTINCT source FROM daily_bars"
+        ).fetchall()
+    }
+    if not sources:
+        return configured
+    if sources == {"tushare"}:
+        inferred = "tushare"
+    elif sources == {"akshare_tencent_qfq"}:
+        inferred = "tx"
+    else:
+        inferred = "mixed"
+    if configured is not None and configured != inferred:
+        return "mixed"
+    return configured or inferred
+
+
+def bind_data_provider(connection: sqlite3.Connection, provider: str) -> str:
+    if provider not in {"tx", "tushare"}:
+        raise ValueError(f"不支持的数据源：{provider}")
+
+    existing = infer_data_provider(connection)
+    if existing is not None and existing != provider:
+        raise ValueError(
+            f"数据库已经绑定数据源 {existing!r}，不能改为 {provider!r}。"
+            "请使用新的 --db 路径重新初始化。"
+        )
+    set_metadata(connection, "data_provider", provider)
+    connection.commit()
+    return provider
 
 
 def market_from_code(code: str) -> str:
@@ -197,6 +262,21 @@ def upsert_daily_bars(connection: sqlite3.Connection, frame: pd.DataFrame) -> in
     return len(rows)
 
 
+def replace_daily_bars_for_code(
+    connection: sqlite3.Connection,
+    frame: pd.DataFrame,
+) -> int:
+    """用同一来源的一段完整行情替换单只股票，避免动态前复权口径残留。"""
+
+    if frame.empty:
+        raise ValueError("不能用空行情替换股票数据")
+    codes = frame["code"].astype(str).str.zfill(6).unique().tolist()
+    if len(codes) != 1:
+        raise ValueError(f"替换操作必须且只能包含一只股票，实际为：{codes}")
+    connection.execute("DELETE FROM daily_bars WHERE code=?", (codes[0],))
+    return upsert_daily_bars(connection, frame)
+
+
 def upsert_index_bars(
     connection: sqlite3.Connection,
     frame: pd.DataFrame,
@@ -276,6 +356,62 @@ def set_trade_date_status(
             now_iso(),
         ),
     )
+
+
+def set_security_update_status(
+    connection: sqlite3.Connection,
+    provider: str,
+    code: str,
+    status: str,
+    start_date: str,
+    end_date: str,
+    stored_rows: int = 0,
+    error: str | None = None,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO security_update_status(
+            provider, code, status, start_date, end_date,
+            stored_rows, error, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(provider, code) DO UPDATE SET
+            status=excluded.status,
+            start_date=excluded.start_date,
+            end_date=excluded.end_date,
+            stored_rows=excluded.stored_rows,
+            error=excluded.error,
+            updated_at=excluded.updated_at
+        """,
+        (
+            provider,
+            str(code).zfill(6),
+            status,
+            start_date,
+            end_date,
+            int(stored_rows),
+            error,
+            now_iso(),
+        ),
+    )
+
+
+def completed_security_codes(
+    connection: sqlite3.Connection,
+    provider: str,
+    start_date: str,
+    end_date: str,
+) -> set[str]:
+    rows = connection.execute(
+        """
+        SELECT code
+        FROM security_update_status
+        WHERE provider=? AND status='complete'
+          AND start_date <= ? AND end_date >= ?
+        """,
+        (provider, start_date, end_date),
+    ).fetchall()
+    return {str(row[0]) for row in rows}
 
 
 def completed_trade_dates(connection: sqlite3.Connection) -> set[str]:
@@ -430,6 +566,7 @@ def load_index_bars(
 
 def database_stats(connection: sqlite3.Connection) -> dict[str, Any]:
     stats: dict[str, Any] = {}
+    stats["data_provider"] = infer_data_provider(connection)
     stats["securities"] = int(
         connection.execute("SELECT COUNT(*) FROM securities").fetchone()[0]
     )
@@ -455,4 +592,27 @@ def database_stats(connection: sqlite3.Connection) -> dict[str, Any]:
         ).fetchone()[0]
     )
     stats["latest_completed_date"] = latest_completed_trade_date(connection)
+    provider = stats["data_provider"]
+    if provider in {"tx", "tushare"}:
+        stats["completed_securities"] = int(
+            connection.execute(
+                """
+                SELECT COUNT(*) FROM security_update_status
+                WHERE provider=? AND status='complete'
+                """,
+                (provider,),
+            ).fetchone()[0]
+        )
+        stats["failed_securities"] = int(
+            connection.execute(
+                """
+                SELECT COUNT(*) FROM security_update_status
+                WHERE provider=? AND status='failed'
+                """,
+                (provider,),
+            ).fetchone()[0]
+        )
+    else:
+        stats["completed_securities"] = 0
+        stats["failed_securities"] = 0
     return stats

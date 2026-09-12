@@ -39,7 +39,7 @@ DEFAULT_OUTPUT_PATH = PROJECT_DIR / "output"
 
 
 def prepare_qfq_bars(raw: pd.DataFrame) -> pd.DataFrame:
-    """使用数据库中的原始价格和复权因子动态生成前复权行情。"""
+    """统一生成前复权行情；腾讯成品前复权数据的因子固定为 1。"""
 
     required = {
         "code",
@@ -103,14 +103,22 @@ def prepare_benchmark(raw: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def permit_database_market(record: dict[str, Any], market: str) -> None:
-    """v1.2 的 Tushare 数据支持沪深京，不再套用腾讯个股市场限制。"""
+def permit_database_market(
+    record: dict[str, Any],
+    market: str,
+    provider: str | None,
+) -> None:
+    """数据库适配层统一允许沪深京，并标记实际初始化数据源。"""
 
     tests = record["base_filters"]["tests"]
     tests["supported_market"] = market in {"SH", "SZ", "BJ"}
     record["base_filters"]["passed"] = all(bool(value) for value in tests.values())
     record["market"] = market
-    record["data_source"] = "sqlite_tushare_raw_plus_adj_factor"
+    record["data_source"] = (
+        "sqlite_tencent_qfq"
+        if provider == "tx"
+        else "sqlite_tushare_raw_plus_adj_factor"
+    )
     refresh_score(record)
 
 
@@ -222,7 +230,7 @@ def run_screen(args: argparse.Namespace) -> int:
         if stats["daily_rows"] == 0:
             print(
                 "本地行情库为空。请先执行："
-                "python app/update_market.py --init --days 250",
+                "python app/update_market.py --init --tx --days 250，或选择 --tushare",
                 file=sys.stderr,
             )
             return 2
@@ -314,7 +322,7 @@ def run_screen(args: argparse.Namespace) -> int:
                 analysis_end,
                 config,
             )
-            permit_database_market(record, market)
+            permit_database_market(record, market, stats["data_provider"])
             records.append(record)
         except Exception as exc:
             errors.append({"code": code, "name": name, "error": str(exc)})
@@ -344,13 +352,21 @@ def run_screen(args: argparse.Namespace) -> int:
         print(f"百分位计算失败：{exc}", file=sys.stderr)
         return 2
 
+    market_scope = "沪深" if stats["data_provider"] == "tx" else "沪深京"
+    stock_data_source = (
+        "SQLite: AKShare Tencent qfq"
+        if stats["data_provider"] == "tx"
+        else "SQLite: Tushare raw daily + adj_factor -> dynamic qfq"
+    )
     metadata = {
         "screener": "A 股上升周期筛选器",
         "version": VERSION,
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "mode": "all" if args.all else "symbols",
         "end_date": analysis_end,
-        "stock_data_source": "SQLite: Tushare raw daily + adj_factor -> dynamic qfq",
+        "stock_data_source": stock_data_source,
+        "database_provider": stats["data_provider"],
+        "market_scope": market_scope,
         "benchmark_data_source": "SQLite: AKShare Tencent sh000300",
         "database": str(args.db.expanduser().resolve()),
         "database_daily_start": stats["daily_start"],
@@ -362,7 +378,7 @@ def run_screen(args: argparse.Namespace) -> int:
         "percentile_is_full_market": percentile_is_full_market,
         "percentile_universe_size": percentile_universe_size,
         "percentile_note": (
-            "由本地数据库成功分析股票的60日收益计算全市场百分位"
+            f"由本地数据库成功分析股票的60日收益计算{market_scope}市场百分位"
             if percentile_is_full_market
             else (
                 "使用 --limit，排名只覆盖受限集合，不代表全市场"
@@ -384,7 +400,7 @@ def run_screen(args: argparse.Namespace) -> int:
     print(f"成功分析：{len(records)}；失败/跳过：{len(errors)}")
     print(f"5/5 技术确认：{confirmed}；4/5 观察池：{watchlist}")
     if args.all:
-        scope = "全市场" if percentile_is_full_market else "受限集合"
+        scope = f"{market_scope}全市场" if percentile_is_full_market else "受限集合"
         print(f"60 日收益百分位：{scope}，有效样本 {percentile_universe_size}")
     else:
         print("60 日收益百分位：N/A（小样本模式不强制）")
