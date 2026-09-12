@@ -1,0 +1,16 @@
+# Python 临时文件与虚拟环境
+__pycache__/
+*.py[cod]
+.venv/
+
+# 本地行情数据库及其 SQLite 辅助文件
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# 每次运行生成的筛选结果
+output/*.json
+output/*.csv
+
+# 本地密钥配置
+.env
