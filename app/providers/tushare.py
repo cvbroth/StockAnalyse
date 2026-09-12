@@ -130,10 +130,10 @@ def read_dotenv_value(path: Path, variable_name: str) -> str | None:
         if not separator or key.strip() != variable_name:
             continue
         value = raw_value.strip()
+        if " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
             value = value[1:-1]
-        elif " #" in value:
-            value = value.split(" #", 1)[0].rstrip()
         return value.strip()
     return None
 

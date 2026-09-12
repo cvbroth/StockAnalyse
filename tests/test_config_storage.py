@@ -1,9 +1,12 @@
+"""项目配置和数据库质量检查。"""
+
 from __future__ import annotations
 
 import sys
 import tempfile
 import types
 import unittest
+import json
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -49,6 +52,49 @@ class ProjectConfigTests(unittest.TestCase):
             self.assertEqual(db_source, "项目配置")
             self.assertEqual(selected_output, (project / "output").resolve())
             self.assertEqual(output_source, "项目配置")
+
+    def test_command_line_database_overrides_project_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            config_path = project / "config" / "project.json"
+            save_project_config(
+                project / "data" / "configured.db",
+                "tx",
+                project_dir=project,
+                config_path=config_path,
+            )
+            explicit = project / "data" / "explicit.db"
+            selected, source = resolve_database_path(
+                explicit, project_dir=project, config_path=config_path
+            )
+            self.assertEqual(selected, explicit.resolve())
+            self.assertEqual(source, "命令行 --db")
+
+    def test_invalid_project_config_fails_clearly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            config_path = project / "config" / "project.json"
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text("{not-json", encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "无法读取项目配置"):
+                resolve_database_path(
+                    None, project_dir=project, config_path=config_path
+                )
+
+    def test_saved_paths_are_portable_relative_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            config_path = project / "config" / "project.json"
+            save_project_config(
+                project / "data" / "market.db",
+                "tx",
+                output_directory=project / "output",
+                project_dir=project,
+                config_path=config_path,
+            )
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["database"], "data/market.db")
+            self.assertEqual(payload["output_directory"], "output")
 
 
 class DatabaseQualityTests(unittest.TestCase):
