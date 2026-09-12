@@ -9,6 +9,7 @@ v1.2 把“下载行情”和“筛选股票”分开：行情先写入 SQLite�
 a_share_screener/
 ├── app/                  程序代码
 │   ├── market_db.py
+│   ├── project_config.py  项目级数据库/输出目录配置
 │   ├── update_market.py
 │   ├── providers/          可替换的数据源适配器
 │   │   └── tencent.py
@@ -16,12 +17,17 @@ a_share_screener/
 │   ├── screener_v1_2.py
 │   └── run_daily.py
 ├── data/                 SQLite 行情数据库
+├── config/               项目配置示例
 ├── output/               JSON、CSV 筛选结果
 ├── README.md             使用说明
 └── requirements.txt      Python 依赖
 ```
 
-默认数据库位置为 `data/market.db`，默认结果目录为 `output/`。
+初始化完成后，程序会自动生成本机专用的 `config/project.json`，统一记录当前
+数据库和结果目录。更新、筛选、每日运行三个入口都会读取它；命令行明确传入的
+`--db` 或 `--output-dir` 优先级更高。配置文件不含Token且已被Git忽略。
+
+如果尚未生成项目配置，则兼容旧版本，默认使用 `data/market.db` 和 `output/`。
 
 ## 1. 安装依赖
 
@@ -114,6 +120,10 @@ python app/update_market.py --init --tushare --days 250
 腾讯模式按股票提交，Tushare模式按交易日提交。两种模式都支持断点续传，按
 `Ctrl+C` 中断后重新执行原初始化命令即可继续。
 
+初始化时会依次显示四个阶段：股票列表、沪深300交易日历、个股行情和数据库
+质量检查。股票列表与沪深300接口默认单次最多等待30秒，可通过
+`--metadata-timeout` 调整。成功选择数据源后，数据库会自动设为当前项目数据库。
+
 腾讯默认同时下载6只股票，可以按服务器和网络情况调整：
 
 ```powershell
@@ -151,6 +161,24 @@ python app/screener_v1_2.py --all --db data/market_tx.db
 python app/run_daily.py --db data/market_tx.db
 ```
 
+如果 `data/market_tx.db` 是旧版本已经初始化完成的腾讯数据库，不需要重新下载。
+更新代码后只需执行一次：
+
+```bash
+python app/update_market.py --status --db data/market_tx.db --set-current
+```
+
+以后可以省略数据库参数：
+
+```bash
+python app/update_market.py --status
+python app/screener_v1_2.py --all
+python app/run_daily.py
+```
+
+每个入口启动时都会明确打印数据库路径、选择来源和数据库中的实际数据源，便于
+在长时间后台运行前确认没有选错数据库。
+
 ## 4. 本地扫描
 
 全市场扫描：
@@ -187,6 +215,10 @@ python app/screener_v1_2.py --all
 ```
 
 如果行情更新不完整，一键入口会停止，不会覆盖上一份有效筛选结果。
+
+筛选前会快速检查数据源、个股日线、沪深300历史、OHLC价格与复权因子，以及
+具备最低历史长度的股票数量。严重问题会在扫描前直接停止，不再等扫描完五千只
+股票才发现数据库不完整；新股历史较短等非致命情况只会显示警告。
 
 ## 数据与复权
 

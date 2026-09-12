@@ -21,8 +21,10 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import math
 import os
+import queue
 import re
 import sys
+import threading
 import time
 from datetime import date, datetime
 from pathlib import Path
@@ -35,24 +37,29 @@ from market_db import (
     completed_trade_dates,
     completed_security_codes,
     connect_database,
+    database_quality_report,
     database_stats,
     finish_update_run,
     infer_data_provider,
     replace_daily_bars_for_code,
     set_security_update_status,
+    set_metadata,
     set_trade_date_status,
     start_update_run,
     upsert_daily_bars,
     upsert_index_bars,
     upsert_securities,
 )
+from project_config import (
+    PROJECT_DIR,
+    resolve_database_path,
+    save_project_config,
+)
 from providers.tencent import fetch_qfq_history, supports_code
 
 
 HS300_SYMBOL = "sh000300"
 APP_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = APP_DIR.parent
-DEFAULT_DB_PATH = PROJECT_DIR / "data" / "market.db"
 
 
 class EndpointRateLimiter:
@@ -181,6 +188,32 @@ def call_with_retries(
     raise RuntimeError(f"{label} 获取失败（已重试 {retries} 次）：{last_error}")
 
 
+def call_with_timeout(
+    label: str,
+    operation: Callable[[], Any],
+    timeout_seconds: float,
+) -> Any:
+    """为不支持 timeout 参数的元数据接口提供进程级等待上限。"""
+
+    results: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+    def target() -> None:
+        try:
+            results.put((True, operation()))
+        except BaseException as exc:
+            results.put((False, exc))
+
+    worker = threading.Thread(target=target, daemon=True, name=f"timeout:{label}")
+    worker.start()
+    try:
+        succeeded, value = results.get(timeout=timeout_seconds)
+    except queue.Empty as exc:
+        raise TimeoutError(f"{label} 超过 {timeout_seconds:g} 秒仍未返回") from exc
+    if succeeded:
+        return value
+    raise value
+
+
 def normalize_code(raw: Any) -> str:
     code = str(raw).strip().upper()
     if "." in code:
@@ -194,7 +227,7 @@ def normalize_code(raw: Any) -> str:
     return code.zfill(6)
 
 
-def fetch_stock_list(retries: int) -> list[tuple[str, str]]:
+def fetch_stock_list(retries: int, timeout_seconds: float) -> list[tuple[str, str]]:
     try:
         import akshare as ak
     except ImportError as exc:
@@ -203,7 +236,11 @@ def fetch_stock_list(retries: int) -> list[tuple[str, str]]:
         ) from exc
 
     raw = call_with_retries(
-        "A股股票列表", ak.stock_info_a_code_name, retries
+        "A股股票列表",
+        lambda: call_with_timeout(
+            "A股股票列表", ak.stock_info_a_code_name, timeout_seconds
+        ),
+        retries,
     )
     if raw is None or raw.empty:
         raise RuntimeError("stock_info_a_code_name() 返回空数据")
@@ -222,7 +259,11 @@ def fetch_stock_list(retries: int) -> list[tuple[str, str]]:
     return sorted(result.items())
 
 
-def fetch_hs300_index(retries: int, end_date: str) -> pd.DataFrame:
+def fetch_hs300_index(
+    retries: int,
+    end_date: str,
+    timeout_seconds: float,
+) -> pd.DataFrame:
     try:
         import akshare as ak
     except ImportError as exc:
@@ -232,7 +273,11 @@ def fetch_hs300_index(retries: int, end_date: str) -> pd.DataFrame:
 
     raw = call_with_retries(
         "腾讯沪深300",
-        lambda: ak.stock_zh_index_daily_tx(symbol=HS300_SYMBOL),
+        lambda: call_with_timeout(
+            "腾讯沪深300",
+            lambda: ak.stock_zh_index_daily_tx(symbol=HS300_SYMBOL),
+            timeout_seconds,
+        ),
         retries,
     )
     if raw is None or raw.empty:
@@ -506,7 +551,7 @@ def select_target_dates(
 def show_status(db_path: Path) -> int:
     connection = connect_database(db_path)
     try:
-        stats = database_stats(connection)
+        stats = database_quality_report(connection)
     finally:
         connection.close()
     print(f"数据库：{db_path.expanduser().resolve()}")
@@ -523,6 +568,10 @@ def show_status(db_path: Path) -> int:
     print(f"股票列表：{stats['securities']} 只")
     print(f"日线记录：{stats['daily_rows']} 行，{stats['daily_codes']} 只股票")
     print(f"日期范围：{stats['daily_start']} ～ {stats['daily_end']}")
+    print(
+        f"沪深300：{stats['index_rows']} 行，"
+        f"{stats['index_start']} ～ {stats['index_end']}"
+    )
     if stats["data_provider"] == "tx":
         print(f"腾讯完整股票：{stats['completed_securities']} 只")
         print(f"腾讯失败股票：{stats['failed_securities']} 只")
@@ -530,7 +579,63 @@ def show_status(db_path: Path) -> int:
         print(f"完整交易日：{stats['completed_dates']} 个")
         print(f"最近完整日期：{stats['latest_completed_date']}")
         print(f"失败日期：{stats['failed_dates']} 个")
+    print(f"初始化标记：{stats['initialization_status'] or '旧数据库/未记录'}")
+    print_quality_report(stats, heading="质量检查")
     return 0
+
+
+def set_current_database(db_path: Path) -> Path:
+    connection = connect_database(db_path)
+    try:
+        provider = infer_data_provider(connection)
+        report = database_quality_report(connection, minimum_history_days=80)
+        if not report["passed"]:
+            raise RuntimeError("；".join(report["errors"]))
+        with connection:
+            set_metadata(connection, "initialization_status", "complete")
+    finally:
+        connection.close()
+    if provider not in {"tx", "tushare"}:
+        raise RuntimeError(
+            "只有已经绑定单一数据源的数据库才能设为当前数据库；"
+            f"实际数据源为 {provider!r}"
+        )
+    return save_project_config(db_path, provider)
+
+
+def print_quality_report(report: dict[str, Any], heading: str) -> None:
+    result = "通过" if report["passed"] else "未通过"
+    print(f"{heading}：{result}")
+    print(
+        f"  至少 {report['minimum_history_days']} 日历史："
+        f"{report['codes_with_history']}/{report['expected_codes']} 只"
+    )
+    for message in report["warnings"]:
+        print(f"  警告：{message}", file=sys.stderr)
+    for message in report["errors"]:
+        print(f"  错误：{message}", file=sys.stderr)
+
+
+def finish_with_quality_check(
+    connection: Any,
+    args: argparse.Namespace,
+    update_result: int,
+) -> int:
+    """完成阶段四检查，并维护初始化状态。"""
+
+    print("[4/4] 正在校验数据库完整性……", flush=True)
+    minimum_days = min(120, args.days) if args.init else 120
+    report = database_quality_report(connection, minimum_days)
+    if args.init:
+        initialization_status = (
+            "complete" if update_result == 0 and report["passed"] else "incomplete"
+        )
+        with connection:
+            set_metadata(connection, "initialization_status", initialization_status)
+    print_quality_report(report, heading="数据库质量检查")
+    if update_result == 0 and not report["passed"]:
+        return 2
+    return update_result
 
 
 def parse_yyyymmdd(value: str) -> str:
@@ -556,7 +661,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="初始化时选择 Tushare 日线和复权因子",
     )
     parser.add_argument(
-        "--db", type=Path, default=DEFAULT_DB_PATH, help="SQLite 数据库路径"
+        "--db",
+        type=Path,
+        default=None,
+        help="SQLite 数据库路径；省略时读取 config/project.json",
     )
     parser.add_argument("--days", type=int, default=250, help="初始化交易日数量")
     parser.add_argument(
@@ -572,6 +680,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="强制重取最近 N 个交易日，用于修复数据",
     )
     parser.add_argument("--retries", type=int, default=3, help="接口重试次数")
+    parser.add_argument(
+        "--metadata-timeout",
+        type=float,
+        default=30.0,
+        help="股票列表和沪深300接口的单次等待上限秒数",
+    )
+    parser.add_argument(
+        "--set-current",
+        action="store_true",
+        help="配合 --status，将指定的现有数据库设为项目默认数据库",
+    )
     parser.add_argument(
         "--tx-workers",
         type=int,
@@ -620,6 +739,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if args.set_current and not args.status:
+        parser.error("--set-current 必须与 --status 一起使用")
     if args.init and not (args.tx or args.tushare):
         parser.error("--init 必须同时选择 --tx 或 --tushare")
     if not args.init and (args.tx or args.tushare):
@@ -632,6 +753,8 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         parser.error("--repair-days 不能为负数")
     if args.retries < 1:
         parser.error("--retries 至少为 1")
+    if args.metadata_timeout <= 0 or not math.isfinite(args.metadata_timeout):
+        parser.error("--metadata-timeout 必须是正有限数")
     if args.tx_workers < 1:
         parser.error("--tx-workers 至少为 1")
     if args.tx_timeout <= 0 or not math.isfinite(args.tx_timeout):
@@ -816,19 +939,37 @@ def run_update(args: argparse.Namespace) -> int:
     try:
         provider = resolve_update_provider(connection, args)
         provider_label = "腾讯前复权" if provider == "tx" else "Tushare"
+        print(f"当前数据库：{args.db}", flush=True)
         print(f"数据库数据源：{provider_label}", flush=True)
-        print("正在更新股票列表和腾讯沪深300交易日历……", flush=True)
-        securities = fetch_stock_list(args.retries)
-        index_frame = fetch_hs300_index(args.retries, args.end_date)
+        if args.init:
+            with connection:
+                set_metadata(connection, "initialization_status", "running")
+            config_path = save_project_config(args.db, provider)
+            print(f"已设为当前项目数据库：{config_path}", flush=True)
+
+        print("[1/4] 正在获取A股股票列表……", flush=True)
+        securities = fetch_stock_list(args.retries, args.metadata_timeout)
+        print(f"[1/4] 股票列表完成：{len(securities)} 只。", flush=True)
+        print("[2/4] 正在获取腾讯沪深300交易日历……", flush=True)
+        index_frame = fetch_hs300_index(
+            args.retries, args.end_date, args.metadata_timeout
+        )
         if index_frame.empty:
             raise RuntimeError("截止指定日期没有可用的沪深300行情")
+        print(
+            f"[2/4] 沪深300完成：{len(index_frame)} 个交易日，"
+            f"截至 {index_frame['trade_date'].iloc[-1]}。",
+            flush=True,
+        )
 
         with connection:
             upsert_securities(connection, securities)
             upsert_index_bars(connection, index_frame, HS300_SYMBOL)
 
         if provider == "tx":
-            return run_tencent_update(connection, args, securities, index_frame)
+            print("[3/4] 正在更新腾讯个股前复权行情……", flush=True)
+            result = run_tencent_update(connection, args, securities, index_frame)
+            return finish_with_quality_check(connection, args, result)
 
         available_dates = index_frame["trade_date"].astype(str).tolist()
         completed = completed_trade_dates(connection)
@@ -842,8 +983,9 @@ def run_update(args: argparse.Namespace) -> int:
         )
         if not targets:
             print("数据库已经是最新状态，没有缺失交易日。")
-            return 0
+            return finish_with_quality_check(connection, args, 0)
 
+        print("[3/4] 正在更新Tushare个股行情和复权因子……", flush=True)
         print(
             f"本次需更新 {len(targets)} 个交易日：{targets[0]} ～ {targets[-1]}",
             flush=True,
@@ -916,9 +1058,15 @@ def run_update(args: argparse.Namespace) -> int:
         )
         if failures:
             print("失败日期已记录；重新执行同一命令会自动续传。", file=sys.stderr)
-            return 1
-        return 0
+            return finish_with_quality_check(connection, args, 1)
+        return finish_with_quality_check(connection, args, 0)
     except KeyboardInterrupt:
+        if args.init:
+            try:
+                with connection:
+                    set_metadata(connection, "initialization_status", "interrupted")
+            except Exception:
+                pass
         if run_id is not None:
             finish_update_run(
                 connection,
@@ -931,6 +1079,12 @@ def run_update(args: argparse.Namespace) -> int:
         print("更新已中断；已完成的交易日已经保存。", file=sys.stderr)
         return 130
     except Exception as exc:
+        if args.init:
+            try:
+                with connection:
+                    set_metadata(connection, "initialization_status", "failed")
+            except Exception:
+                pass
         if run_id is not None:
             finish_update_run(
                 connection,
@@ -949,8 +1103,20 @@ def run_update(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    try:
+        args.db, args.db_source = resolve_database_path(args.db)
+    except RuntimeError as exc:
+        parser.error(str(exc))
     validate_args(args, parser)
+    print(f"数据库选择：{args.db_source} → {args.db}", flush=True)
     if args.status:
+        if args.set_current:
+            try:
+                config_path = set_current_database(args.db)
+            except RuntimeError as exc:
+                print(f"设置当前数据库失败：{exc}", file=sys.stderr)
+                return 2
+            print(f"已写入当前项目配置：{config_path}", flush=True)
         return show_status(args.db)
     return run_update(args)
 

@@ -14,3 +14,7 @@ output/*.csv
 
 # 本地密钥配置
 .env
+
+# 当前机器使用的项目运行配置（初始化时自动生成）
+config/project.json
+config/project.json.tmp

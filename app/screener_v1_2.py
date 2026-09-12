@@ -14,10 +14,16 @@ import pandas as pd
 
 from market_db import (
     connect_database,
+    database_quality_report,
     database_stats,
     load_index_bars,
     load_recent_daily_bars,
     load_securities,
+)
+from project_config import (
+    PROJECT_DIR,
+    resolve_database_path,
+    resolve_output_path,
 )
 from screener_v1_1 import (
     ScreenConfig,
@@ -33,9 +39,6 @@ from screener_v1_1 import (
 VERSION = "1.2"
 HS300_SYMBOL = "sh000300"
 APP_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = APP_DIR.parent
-DEFAULT_DB_PATH = PROJECT_DIR / "data" / "market.db"
-DEFAULT_OUTPUT_PATH = PROJECT_DIR / "output"
 
 
 def prepare_qfq_bars(raw: pd.DataFrame) -> pd.DataFrame:
@@ -144,10 +147,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="小样本检查模式；不计算、不强制样本内百分位",
     )
     parser.add_argument(
-        "--db", type=Path, default=DEFAULT_DB_PATH, help="SQLite 数据库路径"
+        "--db",
+        type=Path,
+        default=None,
+        help="SQLite 数据库路径；省略时读取 config/project.json",
     )
     parser.add_argument(
-        "--output-dir", type=Path, default=DEFAULT_OUTPUT_PATH, help="输出目录"
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="输出目录；省略时读取 config/project.json",
     )
     parser.add_argument(
         "--end-date", type=parse_yyyymmdd, help="历史截面日期 YYYYMMDD；默认数据库最新日期"
@@ -227,6 +236,35 @@ def run_screen(args: argparse.Namespace) -> int:
     connection = connect_database(args.db)
     try:
         stats = database_stats(connection)
+        quality = database_quality_report(connection, args.min_history_days)
+        provider_labels = {
+            "tx": "腾讯前复权（沪深）",
+            "tushare": "Tushare原始日线+复权因子（沪深京）",
+            "mixed": "混合来源（禁止分析）",
+            None: "尚未初始化",
+        }
+        print(f"当前数据库：{args.db}", flush=True)
+        print(
+            f"数据库数据源：{provider_labels.get(stats['data_provider'], stats['data_provider'])}",
+            flush=True,
+        )
+        print(
+            f"数据范围：{stats['daily_start']} ～ {stats['daily_end']}；"
+            f"日线 {stats['daily_rows']} 行；沪深300 {stats['index_rows']} 日。",
+            flush=True,
+        )
+        for message in quality["warnings"]:
+            print(f"数据库警告：{message}", file=sys.stderr, flush=True)
+        if not quality["passed"]:
+            print("数据库质量检查未通过，已停止筛选：", file=sys.stderr)
+            for message in quality["errors"]:
+                print(f"  - {message}", file=sys.stderr)
+            print(
+                "请先执行 python app/update_market.py --status 查看状态，"
+                "再继续或重新初始化。",
+                file=sys.stderr,
+            )
+            return 2
         if stats["daily_rows"] == 0:
             print(
                 "本地行情库为空。请先执行："
@@ -411,7 +449,14 @@ def run_screen(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    try:
+        args.db, args.db_source = resolve_database_path(args.db)
+        args.output_dir, args.output_source = resolve_output_path(args.output_dir)
+    except RuntimeError as exc:
+        parser.error(str(exc))
     validate_args(args, parser)
+    print(f"数据库选择：{args.db_source} → {args.db}", flush=True)
+    print(f"结果目录：{args.output_source} → {args.output_dir}", flush=True)
     return run_screen(args)
 
 

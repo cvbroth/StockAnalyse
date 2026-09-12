@@ -581,6 +581,18 @@ def database_stats(connection: sqlite3.Connection) -> dict[str, Any]:
     ).fetchone()
     stats["daily_start"] = row[0]
     stats["daily_end"] = row[1]
+    index_row = connection.execute(
+        """
+        SELECT COUNT(*), MIN(trade_date), MAX(trade_date)
+        FROM index_bars WHERE symbol='sh000300'
+        """
+    ).fetchone()
+    stats["index_rows"] = int(index_row[0])
+    stats["index_start"] = index_row[1]
+    stats["index_end"] = index_row[2]
+    stats["initialization_status"] = get_metadata(
+        connection, "initialization_status"
+    )
     stats["completed_dates"] = int(
         connection.execute(
             "SELECT COUNT(*) FROM trade_date_status WHERE status='complete'"
@@ -616,3 +628,85 @@ def database_stats(connection: sqlite3.Connection) -> dict[str, Any]:
         stats["completed_securities"] = 0
         stats["failed_securities"] = 0
     return stats
+
+
+def database_quality_report(
+    connection: sqlite3.Connection,
+    minimum_history_days: int = 120,
+) -> dict[str, Any]:
+    """执行快速、只读的数据库质量检查。"""
+
+    if minimum_history_days < 1:
+        raise ValueError("minimum_history_days 必须至少为 1")
+    stats = database_stats(connection)
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    provider = stats["data_provider"]
+    if provider is None:
+        errors.append("数据库尚未绑定行情数据源")
+    elif provider == "mixed":
+        errors.append("数据库混入了多个个股行情数据源")
+    if stats["securities"] == 0:
+        errors.append("股票列表为空")
+    if stats["daily_rows"] == 0:
+        errors.append("个股日线为空")
+    if stats["index_rows"] < 61:
+        errors.append(f"沪深300历史不足61日，实际{stats['index_rows']}日")
+
+    invalid_rows = int(
+        connection.execute(
+            """
+            SELECT COUNT(*) FROM daily_bars
+            WHERE close <= 0 OR volume < 0 OR adj_factor <= 0
+               OR high < low OR high < open OR high < close
+               OR low > open OR low > close
+            """
+        ).fetchone()[0]
+    )
+    codes_with_history = int(
+        connection.execute(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT code FROM daily_bars
+                GROUP BY code HAVING COUNT(*) >= ?
+            )
+            """,
+            (int(minimum_history_days),),
+        ).fetchone()[0]
+    )
+    expected_codes = int(
+        connection.execute(
+            "SELECT COUNT(*) FROM securities WHERE active=1"
+            + (" AND market IN ('SH', 'SZ')" if provider == "tx" else "")
+        ).fetchone()[0]
+    )
+    if invalid_rows:
+        errors.append(f"发现{invalid_rows}行价格、成交量或复权因子不合法")
+    if stats["daily_rows"] and codes_with_history == 0:
+        errors.append(
+            f"没有股票具备至少{minimum_history_days}个交易日的历史数据"
+        )
+    if expected_codes and codes_with_history < expected_codes * 0.80:
+        warnings.append(
+            f"仅{codes_with_history}/{expected_codes}只股票具备至少"
+            f"{minimum_history_days}日历史；新股可能自然不足"
+        )
+    if provider == "tx" and stats["failed_securities"]:
+        warnings.append(f"腾讯更新状态中仍有{stats['failed_securities']}只失败股票")
+    if provider == "tushare" and stats["failed_dates"]:
+        warnings.append(f"Tushare更新状态中仍有{stats['failed_dates']}个失败日期")
+    if stats["daily_end"] and stats["index_end"]:
+        if str(stats["daily_end"]) > str(stats["index_end"]):
+            warnings.append("个股最新日期晚于沪深300最新日期")
+
+    return {
+        **stats,
+        "minimum_history_days": int(minimum_history_days),
+        "codes_with_history": codes_with_history,
+        "expected_codes": expected_codes,
+        "invalid_daily_rows": invalid_rows,
+        "errors": errors,
+        "warnings": warnings,
+        "passed": not errors,
+    }

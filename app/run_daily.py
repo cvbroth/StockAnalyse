@@ -8,18 +8,31 @@ import subprocess
 import sys
 from pathlib import Path
 
+from project_config import (
+    PROJECT_DIR,
+    resolve_database_path,
+    resolve_output_path,
+)
 
 APP_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = APP_DIR.parent
-DEFAULT_DB_PATH = PROJECT_DIR / "data" / "market.db"
-DEFAULT_OUTPUT_PATH = PROJECT_DIR / "output"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="A 股筛选器 v1.2 每日运行入口")
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_PATH)
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="SQLite数据库路径；省略时读取 config/project.json",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="结果目录；省略时读取 config/project.json",
+    )
     parser.add_argument("--retries", type=int, default=3)
+    parser.add_argument("--metadata-timeout", type=float, default=30.0)
     parser.add_argument("--tx-workers", type=int, default=6)
     parser.add_argument("--tx-timeout", type=float, default=15.0)
     parser.add_argument("--daily-per-minute", type=float, default=50.0)
@@ -32,7 +45,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        args.db, db_source = resolve_database_path(args.db)
+        args.output_dir, output_source = resolve_output_path(args.output_dir)
+    except RuntimeError as exc:
+        parser.error(str(exc))
+    print(f"当前数据库：{db_source} → {args.db}", flush=True)
+    print(f"当前结果目录：{output_source} → {args.output_dir}", flush=True)
     update_command = [
         sys.executable,
         str(APP_DIR / "update_market.py"),
@@ -41,6 +62,8 @@ def main(argv: list[str] | None = None) -> int:
         str(args.db),
         "--retries",
         str(args.retries),
+        "--metadata-timeout",
+        str(args.metadata_timeout),
         "--tx-workers",
         str(args.tx_workers),
         "--tx-timeout",

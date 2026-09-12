@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "database": "data/market_tx.db",
+  "output_directory": "output",
+  "data_provider": "tx"
+}
