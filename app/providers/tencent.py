@@ -7,8 +7,27 @@ from typing import Any, Iterable
 
 import pandas as pd
 
+from .base import MarketDataProvider, PROVIDER_DESCRIPTORS
+
 
 SOURCE_NAME = "akshare_tencent_qfq"
+
+
+class TencentProvider(MarketDataProvider):
+    descriptor = PROVIDER_DESCRIPTORS["tx"]
+
+    def supports_code(self, code: str) -> bool:
+        return supports_code(code)
+
+    def fetch_security_history(
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
+        retries: int,
+        timeout: float,
+    ) -> pd.DataFrame:
+        return fetch_qfq_history(code, start_date, end_date, retries, timeout)
 
 
 def supports_code(code: str) -> bool:

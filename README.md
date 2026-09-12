@@ -7,20 +7,61 @@ v1.2 把“下载行情”和“筛选股票”分开：行情先写入 SQLite�
 
 ```text
 a_share_screener/
-├── app/                  程序代码
-│   ├── market_db.py
-│   ├── project_config.py  项目级数据库/输出目录配置
-│   ├── update_market.py
-│   ├── providers/          可替换的数据源适配器
-│   │   └── tencent.py
-│   ├── screener_v1_1.py
-│   ├── screener_v1_2.py
-│   └── run_daily.py
+├── app/
+│   ├── cli/                稳定命令入口
+│   │   ├── update.py
+│   │   ├── screen.py
+│   │   └── daily.py
+│   ├── providers/          可替换的数据源层
+│   │   ├── base.py
+│   │   ├── tencent.py
+│   │   └── tushare.py
+│   ├── services/           更新与筛选业务流程
+│   │   ├── market_update.py
+│   │   └── screening.py
+│   ├── analysis/           与数据源无关的分析核心
+│   │   ├── models.py
+│   │   ├── engine.py
+│   │   └── outputs.py
+│   ├── storage/
+│   │   └── sqlite.py       SQLite存储实现
+│   ├── legacy/             v1.1直接联网兼容实现
+│   ├── project_config.py   项目级数据库/输出目录配置
+│   ├── update_market.py    旧命令兼容入口
+│   ├── screener_v1_2.py    旧命令兼容入口
+│   └── run_daily.py        旧命令兼容入口
 ├── data/                 SQLite 行情数据库
 ├── config/               项目配置示例
 ├── output/               JSON、CSV 筛选结果
+├── tests/                无网络自动化测试
 ├── README.md             使用说明
 └── requirements.txt      Python 依赖
+```
+
+第二阶段以后，数据流固定为：
+
+```text
+命令入口 → 业务服务 → 数据提供者/SQLite存储 → 分析核心 → 输出文件
+```
+
+腾讯和Tushare都实现公共的数据提供者能力描述，并分别负责把自己的字段转换为
+统一存储格式。分析核心只接收标准行情，不导入AKShare、Tushare或SQLite模块，
+因此以后增加BaoStock等提供者时不需要修改技术指标和选股规则。
+
+推荐使用不含版本号的新入口：
+
+```bash
+python -m app.cli.update --status
+python -m app.cli.screen --all
+python -m app.cli.daily
+```
+
+原有命令仍然兼容，行为与新入口相同：
+
+```bash
+python app/update_market.py --status
+python app/screener_v1_2.py --all
+python app/run_daily.py
 ```
 
 初始化完成后，程序会自动生成本机专用的 `config/project.json`，统一记录当前
