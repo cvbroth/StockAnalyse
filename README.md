@@ -85,6 +85,7 @@ python -m app.cli.fundamentals
 - [数据源选择与复权方式](docs/DATA_SOURCES.md)
 - [项目架构](docs/ARCHITECTURE.md)
 - [分层分析引擎](docs/ANALYSIS_ENGINE.md)
+- [Layer3研究结果契约](docs/FUNDAMENTAL_RESEARCH.md)
 - [常见故障排查](docs/TROUBLESHOOTING.md)
 - [开发与测试](docs/DEVELOPMENT.md)
 
@@ -105,6 +106,9 @@ errors.csv
 runs/<运行编号>/fundamental/request.json
 runs/<运行编号>/fundamental/sync_summary.json
 runs/<运行编号>/fundamental/financial_quant.json
+runs/<运行编号>/fundamental/research_request.json
+runs/<运行编号>/fundamental/research_results.template.json
+runs/<运行编号>/fundamental/layer3.json
 ```
 
 本项目输出的是技术条件筛选结果，不构成投资建议。实盘使用前应自行回测并评估

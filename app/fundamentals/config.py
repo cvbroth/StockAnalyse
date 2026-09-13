@@ -22,11 +22,25 @@ class FundamentalCollectionConfig:
 
 
 @dataclass(frozen=True)
+class FundamentalScoringConfig:
+    earnings_momentum_weight: float = 25.0
+    business_quality_weight: float = 20.0
+    industry_cycle_weight: float = 15.0
+    expectation_delta_weight: float = 25.0
+    risk_penalty_weight: float = 15.0
+    red_risk_threshold: float = 80.0
+    key_focus_threshold: float = 75.0
+    follow_up_threshold: float = 60.0
+    min_research_confidence: float = 0.60
+
+
+@dataclass(frozen=True)
 class FundamentalSettings:
     version: str
     enabled: bool
     provider: str
     collection: FundamentalCollectionConfig
+    scoring: FundamentalScoringConfig
     path: Path
 
 
@@ -48,12 +62,15 @@ def load_fundamental_settings(
     enabled = payload.get("enabled")
     provider = payload.get("provider")
     values = payload.get("collection")
+    scoring_values = payload.get("scoring")
     if not isinstance(enabled, bool):
         raise RuntimeError("基本面配置 enabled 必须是布尔值")
     if not isinstance(provider, str) or not provider.strip():
         raise RuntimeError("基本面配置 provider 不能为空")
     if not isinstance(values, dict):
         raise RuntimeError("基本面配置必须提供 [collection] 区段")
+    if not isinstance(scoring_values, dict):
+        raise RuntimeError("基本面配置必须提供 [scoring] 区段")
     expected = {
         "financial_top_n", "research_top_n", "quarters", "stale_after_days"
     }
@@ -82,10 +99,62 @@ def load_fundamental_settings(
         raise RuntimeError("stale_after_days 不能为负数")
     if enabled and provider == "none":
         raise RuntimeError("启用基本面时 provider 不能是 none")
+
+    scoring_expected = {
+        "earnings_momentum_weight",
+        "business_quality_weight",
+        "industry_cycle_weight",
+        "expectation_delta_weight",
+        "risk_penalty_weight",
+        "red_risk_threshold",
+        "key_focus_threshold",
+        "follow_up_threshold",
+        "min_research_confidence",
+    }
+    scoring_unknown = sorted(set(scoring_values).difference(scoring_expected))
+    scoring_missing = sorted(scoring_expected.difference(scoring_values))
+    if scoring_unknown:
+        raise RuntimeError(
+            f"基本面[scoring]包含未知参数：{', '.join(scoring_unknown)}"
+        )
+    if scoring_missing:
+        raise RuntimeError(
+            f"基本面[scoring]缺少参数：{', '.join(scoring_missing)}"
+        )
+    try:
+        scoring = FundamentalScoringConfig(
+            **{key: float(scoring_values[key]) for key in scoring_expected}
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"基本面合并评分配置无效：{exc}") from exc
+    weights = (
+        scoring.earnings_momentum_weight,
+        scoring.business_quality_weight,
+        scoring.industry_cycle_weight,
+        scoring.expectation_delta_weight,
+        scoring.risk_penalty_weight,
+    )
+    if any(weight < 0 for weight in weights) or abs(sum(weights) - 100.0) > 1e-9:
+        raise RuntimeError("基本面四项正向权重与风险惩罚权重之和必须为100")
+    if sum(weights[:4]) <= 0:
+        raise RuntimeError("基本面正向权重之和必须大于0")
+    for name in (
+        "red_risk_threshold",
+        "key_focus_threshold",
+        "follow_up_threshold",
+    ):
+        value = getattr(scoring, name)
+        if not 0.0 <= value <= 100.0:
+            raise RuntimeError(f"{name} 必须位于0到100之间")
+    if scoring.follow_up_threshold > scoring.key_focus_threshold:
+        raise RuntimeError("follow_up_threshold 不能高于 key_focus_threshold")
+    if not 0.0 <= scoring.min_research_confidence <= 1.0:
+        raise RuntimeError("min_research_confidence 必须位于0到1之间")
     return FundamentalSettings(
         version=version.strip(),
         enabled=enabled,
         provider=provider.strip(),
         collection=collection,
+        scoring=scoring,
         path=config_path,
     )

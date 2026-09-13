@@ -48,8 +48,13 @@ market.db → Layer1/Layer2 → Top N候选请求
                               │
                               ▼
 AKShare同花顺财务摘要 ─┐
-                       ├→ 标准观测值 → fundamentals.db → 八季度纯量化 → 独立结果
-东方财富精确公告日期 ──┘
+                       ├→ 标准观测值 → fundamentals.db → 八季度纯量化
+东方财富精确公告日期 ──┘                                  │
+                                                           ▼
+Layer2 Top10 → research_request.json → 外部结构化研究 → 严格校验
+                                                           │
+                                                           ▼
+                                             Layer3合并、风险否决与排名
 ```
 
 `market.db`覆盖全市场且主要按日更新；`fundamentals.db`仅缓存曾经进入候选范围的
@@ -73,7 +78,8 @@ AnalysisEngine
    │   └── 过热惩罚
    └── 基本面数据域
        ├── 八季度财务量化（已启用）
-       └── FundamentalAnalyzer组合协议（后续阶段）
+       ├── 结构化研究输入/输出契约
+       └── Layer3合并、风险否决与排名
 ```
 
 每个模块接收统一的 `StockInput` 和 `ScreenConfig`，返回 `ConditionResult`。
@@ -89,7 +95,8 @@ AnalysisEngine
 基本面收集参数位于 `config/analysis/fundamental.toml`。默认选取Layer2 Top 30、
 请求最近8个季度。真实提供者把标准观测值写入独立稀疏缓存，再由不访问网络和
 数据库的纯分析模块计算盈利动量、经营质量及数据覆盖率。技术层与基本面层之间
-只共享不可变运行编号、截止日期和候选上下文。
+只共享不可变运行编号、截止日期和候选上下文。研究结果必须回传相同的运行编号、
+截止日期和输入SHA-256；旧研究或其他快照的结果不能混入当前Layer3。
 
 ## 兼容入口
 

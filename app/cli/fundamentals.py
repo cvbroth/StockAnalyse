@@ -18,6 +18,11 @@ from ..project_config import (
 )
 from ..providers.fundamentals import AkshareThsFundamentalProvider
 from ..services.fundamental_analysis import analyze_cached_fundamentals
+from ..services.fundamental_research import (
+    load_research_results,
+    prepare_research_request_file,
+    write_layer3_results,
+)
 from ..services.fundamental_sync import (
     prepare_fundamental_requests,
     select_fundamental_candidates,
@@ -44,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 只检查将要处理的候选，不访问财务接口：
   python -m app.cli.fundamentals --prepare-only
+
+合并外部结构化研究结果：
+  python -m app.cli.fundamentals --research-results research_results.json
 """,
     )
     parser.add_argument(
@@ -86,6 +94,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="公告日期请求超时秒数；财务摘要超时由AKShare内部控制",
     )
     parser.add_argument("--retries", type=int, default=3, help="单只股票失败重试次数")
+    parser.add_argument(
+        "--research-results",
+        type=Path,
+        default=None,
+        help=(
+            "外部结构化研究结果JSON；省略时若运行目录存在"
+            " fundamental/research_results.json 则自动读取"
+        ),
+    )
     return parser
 
 
@@ -142,6 +159,11 @@ def main(argv: list[str] | None = None) -> int:
             sync_summary = None
             analysis_path = None
             analysis_records: list[dict] = []
+            research_request_path = None
+            research_template_path = None
+            layer3_path = None
+            research_results: dict = {}
+            layer3_records: list[dict] = []
             if settings.enabled and not args.prepare_only:
                 if settings.provider != "akshare_ths":
                     raise RuntimeError(
@@ -171,6 +193,43 @@ def main(argv: list[str] | None = None) -> int:
                     output_dir / "runs" / run_id,
                     provider=settings.provider,
                     config_version=settings.version,
+                )
+                run_directory = output_dir / "runs" / run_id
+                research_request_path, research_template_path, research_requests = (
+                    prepare_research_request_file(
+                        analysis_records,
+                        run_directory,
+                        run_id,
+                        as_of_date,
+                        settings.collection.research_top_n,
+                        settings.version,
+                    )
+                )
+                default_research_path = (
+                    run_directory / "fundamental" / "research_results.json"
+                )
+                research_results_path = args.research_results
+                if (
+                    research_results_path is None
+                    and default_research_path.is_file()
+                ):
+                    research_results_path = default_research_path
+                if research_results_path is not None:
+                    research_results = load_research_results(
+                        research_results_path,
+                        research_requests,
+                        run_id,
+                        as_of_date,
+                    )
+                layer3_path, layer3_records = write_layer3_results(
+                    analysis_records,
+                    research_requests,
+                    research_results,
+                    run_directory,
+                    run_id,
+                    as_of_date,
+                    settings.version,
+                    settings.scoring,
                 )
             stats = fundamental_database_stats(connection)
         finally:
@@ -206,6 +265,20 @@ def main(argv: list[str] | None = None) -> int:
             for item in analysis_records
         )
         print(f"财务量化：完整 {complete}，部分 {partial}，结果 {analysis_path}")
+        print(
+            f"研究交接：准备 {len(layer3_records)} 只，"
+            f"已收到结构化研究 {len(research_results)} 只；"
+            f"请求 {research_request_path}"
+        )
+        print(f"研究结果模板：{research_template_path}")
+        layer3_complete = sum(
+            item["status"] in {"complete", "rejected"}
+            for item in layer3_records
+        )
+        print(
+            f"Layer3合并：完成/否决 {layer3_complete}，"
+            f"待研究 {len(layer3_records) - layer3_complete}；结果 {layer3_path}"
+        )
         if requests and sync_summary["failed"] == len(requests):
             return 2
     return 0

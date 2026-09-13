@@ -3,6 +3,7 @@
 from .config import (
     DEFAULT_FUNDAMENTAL_CONFIG_PATH,
     FundamentalCollectionConfig,
+    FundamentalScoringConfig,
     FundamentalSettings,
     load_fundamental_settings,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "FundamentalDataset",
     "FundamentalFetchRequest",
     "FundamentalObservation",
+    "FundamentalScoringConfig",
     "FundamentalSettings",
     "load_fundamental_settings",
 ]

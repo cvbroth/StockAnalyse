@@ -22,6 +22,8 @@ from app.storage.fundamentals_sqlite import (
     connect_fundamental_database,
     fundamental_database_stats,
     load_observations,
+    set_sync_status,
+    upsert_observations,
 )
 
 
@@ -276,6 +278,75 @@ class FundamentalPreparationCliTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(result, 2)
+
+    def test_cached_cli_run_writes_research_handoff_and_pending_layer3(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "output"
+            database = root / "fundamentals.db"
+            run_id = "20260911-layer3"
+            record = candidate("600001", 5, 90.0, 1)
+            write_run_snapshot(
+                output,
+                run_id,
+                [record],
+                {"end_date": "20260911", "mode": "all"},
+                update_latest=True,
+            )
+            fetch_request = FundamentalFetchRequest(
+                run_id=run_id,
+                code="600001",
+                name="测试600001",
+                as_of_date="20260911",
+                requested_quarters=8,
+                technical_score=5,
+                technical_quality_score=90.0,
+                quality_rank=1,
+                selection_reason="test",
+            )
+            observation = FundamentalObservation(
+                code="600001",
+                metric="revenue_single_quarter_yoy",
+                period_end="2026-06-30",
+                published_date="2026-08-20",
+                available_at="2026-08-21",
+                value=0.20,
+                unit="RATIO",
+                source="akshare_ths",
+                source_record_id="cached",
+            )
+            connection = connect_fundamental_database(database)
+            try:
+                upsert_observations(connection, [observation])
+                connection.commit()
+                set_sync_status(
+                    connection,
+                    "akshare_ths",
+                    fetch_request,
+                    "complete",
+                    observation_count=1,
+                )
+            finally:
+                connection.close()
+
+            result = fundamentals_main(
+                [
+                    "--output-dir", str(output),
+                    "--fundamental-db", str(database),
+                    "--top-n", "1",
+                ]
+            )
+            self.assertEqual(result, 0)
+            fundamental_dir = output / "runs" / run_id / "fundamental"
+            self.assertTrue((fundamental_dir / "research_request.json").is_file())
+            self.assertTrue(
+                (fundamental_dir / "research_results.template.json").is_file()
+            )
+            layer3 = json.loads(
+                (fundamental_dir / "layer3.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(layer3["records"][0]["status"], "pending")
+            self.assertIsNone(layer3["records"][0]["final_score"])
 
 
 if __name__ == "__main__":

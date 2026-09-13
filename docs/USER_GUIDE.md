@@ -400,6 +400,7 @@ python -m app.cli.fundamentals --run-id <运行编号> --top-n 20 --quarters 8
 | `--prepare-only` | 否 | 只生成候选请求并检查范围，不访问外部财务接口 |
 | `--timeout` | 否 | 公告日期辅助请求的超时秒数，默认15 |
 | `--retries` | 否 | 每只股票接口失败后的总尝试次数，默认3 |
+| `--research-results` | 否 | 导入外部结构化研究结果JSON；默认自动查找标准文件名 |
 | `--output-dir` | 否 | 指定筛选快照所在结果目录；通常无需填写 |
 | `--fundamental-db` | 否 | 指定独立基本面缓存库；通常无需填写 |
 | `--config` | 否 | 指定另一份基本面TOML配置文件 |
@@ -432,7 +433,10 @@ python -m app.cli.fundamentals --prepare-only
 fundamental/
 ├── request.json
 ├── sync_summary.json
-└── financial_quant.json
+├── financial_quant.json
+├── research_request.json
+├── research_results.template.json
+└── layer3.json
 ```
 
 量化结果分别给出 `earnings_momentum`、`business_quality`、数据覆盖率、缺失指标和
@@ -440,6 +444,22 @@ fundamental/
 公告日期按下一自然日开始可用；精确日期取不到时使用法定最晚披露日并留下
 `conservative_deadline` 标记，防止历史截面误用未来财报。单只股票失败会记录并
 继续，始终不会破坏Layer1/2结果。
+
+其中 `research_request.json` 默认只选择Layer2前10只，包含固定研究问题和每只股票
+的 `input_hash`。`research_results.template.json` 是下一阶段研究工具需要填写的
+标准模板。当前尚未导入外部研究时，`layer3.json` 显示 `pending` 和空最终分是正常
+状态，不是运行失败。
+
+如果已经有符合契约的研究结果，可保存成运行目录下的
+`fundamental/research_results.json`，再次运行命令后会自动读取；也可以明确指定：
+
+```bash
+python -m app.cli.fundamentals --research-results /path/to/research_results.json
+```
+
+程序会验证运行编号、截止日期、输入指纹、分值范围和证据发布日期。验证成功后，
+`layer3.json` 才会出现最终分、风险惩罚、否决状态和排名。完整字段定义见
+[Layer3研究结果契约](FUNDAMENTAL_RESEARCH.md)。
 
 ## 常用维护命令
 
