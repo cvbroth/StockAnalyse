@@ -11,6 +11,9 @@ app.providers   app.storage   app.fundamentals   app.analysis
 外部数据适配器     双SQLite库      数据域契约         纯分析与输出
 ```
 
+Layer3研究任务另外经过 `app.research`。这一层只编排外部结构化结果，不计算技术
+指标、不访问行情库，也不允许覆盖财务量化输入。
+
 ## 各层职责
 
 - `app/cli/`：稳定命令入口，只负责参数和任务编排。
@@ -18,6 +21,7 @@ app.providers   app.storage   app.fundamentals   app.analysis
 - `app/providers/`：外部接口访问和统一字段转换。
 - `app/storage/`：行情库和基本面缓存库的SQLite表结构、事务、状态和查询。
 - `app/fundamentals/`：提供者、存储和分析共同使用的基本面数据契约与配置。
+- `app/research/`：逐股研究工作区、结果提供者协议、续跑和失败隔离。
 - `app/analysis/`：不访问网络和数据库的纯分析逻辑。
 - `app/legacy/`：只为旧版直接联网命令保留。
 
@@ -51,10 +55,14 @@ AKShare同花顺财务摘要 ─┐
                        ├→ 标准观测值 → fundamentals.db → 八季度纯量化
 东方财富精确公告日期 ──┘                                  │
                                                            ▼
-Layer2 Top10 → research_request.json → 外部结构化研究 → 严格校验
-                                                           │
-                                                           ▼
-                                             Layer3合并、风险否决与排名
+Layer2 Top10 → research_request.json → app.research逐股工作区
+                                      │
+                                      ├→ 外部结果inbox
+                                      ├→ 逐股校验/失败隔离/results
+                                      └→ research_results.json
+                                                   │
+                                                   ▼
+                                     Layer3合并、风险否决与排名
 ```
 
 `market.db`覆盖全市场且主要按日更新；`fundamentals.db`仅缓存曾经进入候选范围的
@@ -97,6 +105,10 @@ AnalysisEngine
 数据库的纯分析模块计算盈利动量、经营质量及数据覆盖率。技术层与基本面层之间
 只共享不可变运行编号、截止日期和候选上下文。研究结果必须回传相同的运行编号、
 截止日期和输入SHA-256；旧研究或其他快照的结果不能混入当前Layer3。
+
+研究工作区以每只股票为最小恢复单位。外部工具实现统一
+`ResearchResultProvider.load(request)` 协议即可接入；当前文件系统提供者可以读取
+批量JSON或 `<代码>.json` 目录，后续OpenClaw适配器不需要修改Layer3组合器。
 
 ## 兼容入口
 

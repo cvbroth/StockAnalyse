@@ -74,6 +74,20 @@ python -m app.cli.fundamentals
 只有处理历史快照时才需要 `--run-id <运行编号>`。基本面同步不会修改已有Layer1/2
 结果。
 
+把Layer3研究请求拆成可恢复的逐股工作项：
+
+```bash
+python -m app.cli.research
+```
+
+该命令不会自行编造研究结论。它会为默认Top 10建立独立工作项和结果投递目录，
+校验外部工具放入的逐股JSON，隔离单股错误，再汇总 `research_results.json` 并
+重算 `layer3.json`。继续处理未完成股票时使用：
+
+```bash
+python -m app.cli.research --resume
+```
+
 旧命令 `app/update_market.py`、`app/screener_v1_2.py` 和 `app/run_daily.py`
 仍然可用，但新部署建议使用上面的模块化入口。
 
@@ -108,6 +122,12 @@ runs/<运行编号>/fundamental/sync_summary.json
 runs/<运行编号>/fundamental/financial_quant.json
 runs/<运行编号>/fundamental/research_request.json
 runs/<运行编号>/fundamental/research_results.template.json
+runs/<运行编号>/fundamental/research/work_items/<股票代码>/request.json
+runs/<运行编号>/fundamental/research/work_items/<股票代码>/result.template.json
+runs/<运行编号>/fundamental/research/inbox/<股票代码>.json
+runs/<运行编号>/fundamental/research/results/<股票代码>.json
+runs/<运行编号>/fundamental/research/execution_summary.json
+runs/<运行编号>/fundamental/research_results.json
 runs/<运行编号>/fundamental/layer3.json
 ```
 

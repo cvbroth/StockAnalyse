@@ -436,6 +436,12 @@ fundamental/
 ├── financial_quant.json
 ├── research_request.json
 ├── research_results.template.json
+├── research/
+│   ├── work_items/
+│   ├── inbox/
+│   ├── results/
+│   └── execution_summary.json
+├── research_results.json
 └── layer3.json
 ```
 
@@ -460,6 +466,85 @@ python -m app.cli.fundamentals --research-results /path/to/research_results.json
 程序会验证运行编号、截止日期、输入指纹、分值范围和证据发布日期。验证成功后，
 `layer3.json` 才会出现最终分、风险惩罚、否决状态和排名。完整字段定义见
 [Layer3研究结果契约](FUNDAMENTAL_RESEARCH.md)。
+
+## Layer3逐股研究工作区
+
+完成基本面同步后，运行：
+
+```bash
+python -m app.cli.research
+```
+
+省略运行编号时，它和基本面命令一样自动选择最近一次完整全市场快照。程序把
+Top 10研究请求拆成互不影响的工作项：
+
+```text
+fundamental/research/
+├── work_items/
+│   └── 603505/
+│       ├── request.json
+│       └── result.template.json
+├── inbox/
+│   └── 603505.json
+├── results/
+│   └── 603505.json
+└── execution_summary.json
+```
+
+`work_items` 是外部研究工具的输入，`inbox` 是待校验结果投递区，`results` 只保存
+已通过运行编号、输入指纹、字段范围和证据日期校验的逐股结果。某只股票校验失败
+只会记录在 `execution_summary.json`，其他股票仍会正常汇总。
+
+当前阶段的默认提供者是本地文件工作区，不会自行搜索网页或生成结论。外部研究
+工具需要读取某只股票的 `request.json`，以 `result.template.json` 为格式填写结果，
+再保存为：
+
+```text
+fundamental/research/inbox/<股票代码>.json
+```
+
+投递完成后执行：
+
+```bash
+python -m app.cli.research --resume
+```
+
+程序会跳过已有 `complete` 结果，继续处理缺失、`partial` 或 `failed` 股票，然后
+重新生成批量 `research_results.json` 和最终 `layer3.json`。
+
+也可以直接导入外部工具生成的批量JSON文件，或包含逐股JSON的其他目录：
+
+```bash
+python -m app.cli.research --import-results /path/to/results.json
+python -m app.cli.research --import-results /path/to/result-directory
+```
+
+只处理当前任务中的指定股票：
+
+```bash
+python -m app.cli.research --code 603505 600519
+```
+
+只读检查已经保存到 `research/results/` 的结果，不创建、覆盖或汇总文件：
+
+```bash
+python -m app.cli.research --validate-only
+```
+
+参数说明：
+
+| 参数 | 是否必需 | 含义 |
+|---|---|---|
+| `--run-id` | 否 | 指定历史运行快照；省略时使用最近一次完整运行 |
+| `--code` | 否 | 只处理列出的股票；股票必须属于当前Top 10研究任务 |
+| `--import-results` | 否 | 指定批量结果JSON或逐股结果目录；省略时读取默认 `inbox` |
+| `--resume` | 否 | 复用已有完整结果，只补未完成股票 |
+| `--validate-only` | 否 | 对逐股结果做只读校验，不修改任何文件 |
+| `--config` | 否 | 指定Layer3评分权重与阈值配置 |
+| `--output-dir` | 否 | 指定运行快照所在输出目录；通常无需填写 |
+
+研究入口不访问行情库和基本面数据库，也不能修改Layer1、Layer2、
+`financial_quant.json` 或 `research_request.json`。
 
 ## 常用维护命令
 

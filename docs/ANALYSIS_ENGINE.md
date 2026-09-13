@@ -120,6 +120,11 @@ python -m app.cli.fundamentals
 - `research_results.template.json`：外部研究员必须遵循的结果模板；
 - `layer3.json`：财务量化与结构化研究的合并、风险否决和最终基本面排名。
 
+`python -m app.cli.research` 会把Top 10拆成逐股工作项。外部工具按股票把JSON
+投递到 `research/inbox/`，执行器逐一校验后保存到 `research/results/`，所以一只
+股票失败不会丢失已完成结果。`--resume` 只补未完成股票；`--validate-only` 对
+已保存结果做只读检查。
+
 已缓存且未过期的数据会复用；单只股票失败不会中断其他股票，也不会改写Layer1/2。
 精确公告日期缺失时使用更晚的法定最晚披露日，并用 `availability_basis` 明确标记。
 为了避免同日收盘前偷看盘后公告，公告数据从下一自然日才视为可用。基本面结果

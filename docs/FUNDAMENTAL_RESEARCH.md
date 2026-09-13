@@ -10,9 +10,13 @@ financial_quant.json
         ↓
 research_request.json             Python生成，只读输入
         ↓
-外部研究员或后续OpenClaw Skill
+逐股研究工作区/外部研究员/后续OpenClaw Skill
         ↓
-research_results.json             外部工具新建
+research/inbox/<代码>.json        外部工具逐股投递
+        ↓
+逐股校验、失败隔离和断点续跑
+        ↓
+research_results.json             Python汇总
         ↓
 Python严格校验和Layer3合并
         ↓
@@ -25,12 +29,24 @@ layer3.json
 output/runs/<运行编号>/fundamental/
 ├── research_request.json
 ├── research_results.template.json
+├── research/
+│   ├── work_items/<代码>/request.json
+│   ├── work_items/<代码>/result.template.json
+│   ├── inbox/<代码>.json
+│   ├── results/<代码>.json
+│   └── execution_summary.json
+├── research_results.json
 └── layer3.json
 ```
 
 `research_request.json` 默认包含Layer2前10只股票。模板最初是合法的 `partial`
 结构，但不含研究结论。复制模板为 `research_results.json` 后，研究工具只填写结论
 字段，不能改动 `run_id`、`code`、`as_of_date` 或 `input_hash`。
+
+运行 `python -m app.cli.research` 后，批量任务会拆分为逐股工作项。外部工具只读
+`work_items/<代码>/request.json`，按照同目录模板生成结论并投递到 `inbox`。
+通过校验的结果才进入 `results`；格式错误、输入指纹错误或证据越过截止日的股票
+单独失败，不会阻止其他股票继续处理。
 
 ## 固定研究内容
 
@@ -133,15 +149,19 @@ output/runs/<运行编号>/fundamental/
 时，股票状态为 `REJECTED` 且不参与排名。研究缺失、字段不全或可信度不足时，状态
 保持 `pending/partial`，不会生成可排名的最终分。
 
-导入标准文件名：
+准备逐股任务并导入默认投递目录：
 
 ```bash
-cp research_results.template.json research_results.json
-python -m app.cli.fundamentals
+python -m app.cli.research
+python -m app.cli.research --resume
 ```
 
-也可以传入其他位置：
+也可以导入外部批量文件或其他逐股结果目录：
 
 ```bash
-python -m app.cli.fundamentals --research-results /path/to/results.json
+python -m app.cli.research --import-results /path/to/results.json
+python -m app.cli.research --import-results /path/to/result-directory
 ```
+
+`--resume` 的含义是复用已有 `complete` 结果，只补缺失、`partial` 和 `failed`
+项目；它不是重新运行Layer1/2或重新下载八季度财务数据。

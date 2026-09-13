@@ -205,25 +205,48 @@ def load_research_results(
     expected = {str(item["code"]): item for item in expected_requests}
     parsed: dict[str, FundamentalResearchResult] = {}
     for raw in records:
-        if not isinstance(raw, dict):
-            raise RuntimeError("研究结果 records 的每一项必须是对象")
-        try:
-            result = FundamentalResearchResult.from_record(raw)
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(f"研究结果字段无效：{exc}") from exc
-        request = expected.get(result.code)
-        if request is None:
-            raise RuntimeError(f"研究结果包含未请求的股票：{result.code}")
+        result = validate_research_result_record(
+            raw,
+            expected,
+            run_id,
+            cutoff,
+        )
         if result.code in parsed:
             raise RuntimeError(f"研究结果包含重复股票：{result.code}")
-        if result.run_id != run_id or result.as_of_date != cutoff:
-            raise RuntimeError(f"{result.code} 的运行编号或截止日期不匹配")
-        if result.name != str(request["name"]):
-            raise RuntimeError(f"{result.code} 的股票名称与研究请求不匹配")
-        if result.input_hash != request["input_hash"]:
-            raise RuntimeError(f"{result.code} 的 input_hash 与研究请求不匹配")
         parsed[result.code] = result
     return parsed
+
+
+def validate_research_result_record(
+    raw: Any,
+    expected_requests: dict[str, dict[str, Any]] | list[dict[str, Any]],
+    run_id: str,
+    as_of_date: str,
+) -> FundamentalResearchResult:
+    """独立校验一只股票，供批量导入和失败隔离共同复用。"""
+
+    if not isinstance(raw, dict):
+        raise RuntimeError("研究结果记录必须是对象")
+    cutoff = normalize_date(as_of_date, "as_of_date")
+    expected = (
+        expected_requests
+        if isinstance(expected_requests, dict)
+        else {str(item["code"]): item for item in expected_requests}
+    )
+    try:
+        result = FundamentalResearchResult.from_record(raw)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"研究结果字段无效：{exc}") from exc
+    request = expected.get(result.code)
+    if request is None:
+        raise RuntimeError(f"研究结果包含未请求的股票：{result.code}")
+    if result.run_id != run_id or result.as_of_date != cutoff:
+        raise RuntimeError(f"{result.code} 的运行编号或截止日期不匹配")
+    if result.name != str(request["name"]):
+        raise RuntimeError(f"{result.code} 的股票名称与研究请求不匹配")
+    if result.input_hash != request["input_hash"]:
+        raise RuntimeError(f"{result.code} 的 input_hash 与研究请求不匹配")
+    return result
 
 
 def write_layer3_results(
