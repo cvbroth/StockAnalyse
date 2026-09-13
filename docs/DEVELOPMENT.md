@@ -30,6 +30,7 @@ python -m compileall -q app tests
 - AKShare财务摘要标准化、公告日回退和八季度量化覆盖率；
 - Layer3研究输入指纹、证据截止日、结构化结果校验、风险否决和待研究状态；
 - Layer3逐股工作项、文件提供者、断点复用、失败隔离和只读校验；
+- OpenClaw Skill frontmatter、相对路径、参考文件和不可越权边界；
 - 全市场百分位与小样本模式；
 - SQLite质量检查；
 - 从数据库到输出文件的完整筛选链路；

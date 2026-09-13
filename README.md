@@ -88,6 +88,13 @@ python -m app.cli.research
 python -m app.cli.research --resume
 ```
 
+Ubuntu服务器已经配置OpenClaw模型和搜索工具后，可以让项目Skill逐股查证并投递：
+
+```bash
+bash scripts/openclaw_research.sh --code 603505
+bash scripts/openclaw_research.sh --resume
+```
+
 旧命令 `app/update_market.py`、`app/screener_v1_2.py` 和 `app/run_daily.py`
 仍然可用，但新部署建议使用上面的模块化入口。
 
@@ -100,6 +107,7 @@ python -m app.cli.research --resume
 - [项目架构](docs/ARCHITECTURE.md)
 - [分层分析引擎](docs/ANALYSIS_ENGINE.md)
 - [Layer3研究结果契约](docs/FUNDAMENTAL_RESEARCH.md)
+- [OpenClaw Layer3研究接入](docs/OPENCLAW.md)
 - [常见故障排查](docs/TROUBLESHOOTING.md)
 - [开发与测试](docs/DEVELOPMENT.md)
 

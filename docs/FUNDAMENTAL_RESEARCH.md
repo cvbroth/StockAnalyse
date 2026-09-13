@@ -165,3 +165,13 @@ python -m app.cli.research --import-results /path/to/result-directory
 
 `--resume` 的含义是复用已有 `complete` 结果，只补缺失、`partial` 和 `failed`
 项目；它不是重新运行Layer1/2或重新下载八季度财务数据。
+
+仓库内置的OpenClaw Skill位于 `skills/a-share-fundamental/`。Ubuntu可直接运行：
+
+```bash
+bash scripts/openclaw_research.sh --code 603505
+bash scripts/openclaw_research.sh --resume
+```
+
+Skill只能向 `inbox` 写候选结果，不能绕过本契约直接写入 `results`。详细部署说明见
+[OpenClaw Layer3研究接入](OPENCLAW.md)。

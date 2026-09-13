@@ -546,6 +546,18 @@ python -m app.cli.research --validate-only
 研究入口不访问行情库和基本面数据库，也不能修改Layer1、Layer2、
 `financial_quant.json` 或 `research_request.json`。
 
+Ubuntu服务器已配置OpenClaw模型和网页搜索工具时，可调用仓库内置Skill：
+
+```bash
+bash scripts/openclaw_research.sh --code 603505
+bash scripts/openclaw_research.sh --resume
+```
+
+第一条建议用于首次验证一只股票；第二条断点研究当前任务剩余股票。Skill会按
+证据等级、截止日期、行业/预期/风险评分规则填写逐股JSON，并在每只完成后立即
+调用Python校验。完整安装、参数和 `screen` 后台运行说明见
+[OpenClaw Layer3研究接入](OPENCLAW.md)。
+
 ## 常用维护命令
 
 强制重取最近 5 个交易日：

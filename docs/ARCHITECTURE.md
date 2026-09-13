@@ -22,6 +22,8 @@ Layer3研究任务另外经过 `app.research`。这一层只编排外部结构�
 - `app/storage/`：行情库和基本面缓存库的SQLite表结构、事务、状态和查询。
 - `app/fundamentals/`：提供者、存储和分析共同使用的基本面数据契约与配置。
 - `app/research/`：逐股研究工作区、结果提供者协议、续跑和失败隔离。
+- `skills/a-share-fundamental/`：OpenClaw固定研究流程、评分规则和输出契约。
+- `scripts/openclaw_research.sh`：Ubuntu无固定项目路径的OpenClaw启动器。
 - `app/analysis/`：不访问网络和数据库的纯分析逻辑。
 - `app/legacy/`：只为旧版直接联网命令保留。
 
@@ -109,6 +111,9 @@ AnalysisEngine
 研究工作区以每只股票为最小恢复单位。外部工具实现统一
 `ResearchResultProvider.load(request)` 协议即可接入；当前文件系统提供者可以读取
 批量JSON或 `<代码>.json` 目录，后续OpenClaw适配器不需要修改Layer3组合器。
+
+OpenClaw Skill不是分析核心的一部分。它读取 `work_items`，把未经信任的候选结果
+写入 `inbox`；Python执行器仍是进入 `results` 和Layer3的唯一校验边界。
 
 ## 兼容入口
 
