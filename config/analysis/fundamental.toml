@@ -1,5 +1,12 @@
-version = "fundamental-interface-v1"
-enabled = false
-provider = "none"
+version = "fundamental-data-v2.0"
+enabled = true
+provider = "akshare_ths"
 
 # 基本面层只负责排序或否决，不与技术分直接相加。
+# AKShare同花顺摘要提供财务指标，东方财富业绩报表仅用于补精确公告日期。
+
+[collection]
+financial_top_n = 30
+research_top_n = 10
+quarters = 8
+stale_after_days = 7

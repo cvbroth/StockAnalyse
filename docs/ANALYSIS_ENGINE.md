@@ -13,7 +13,7 @@ Layer 2 技术质量排名（0～100）－过热惩罚
    ↓
 历史20/60日表现评估
    ↓
-基本面提供者接口（默认关闭）
+按需八季度财务量化（独立结果）
 ```
 
 ## 第一层
@@ -92,6 +92,32 @@ python -m app.cli.evaluate --run-id <run-id> --horizons 20 60
 
 ## 基本面接口
 
-`app.analysis.fundamentals` 定义了统一输入、结果和提供者协议。默认使用安全的
-`DisabledFundamentalAnalyzer`，不生成虚假基本面分。未来接入外部研究服务时，
-基本面负责排序或否决，不直接与技术分相加。
+基本面数据采集与基本面分析已经分离：
+
+- `app.fundamentals` 定义带报告期、发布日期、可用日期和来源的数据契约；
+- `app.providers.fundamentals` 定义可替换数据提供者协议；
+- `app.storage.fundamentals_sqlite` 管理独立的稀疏缓存库；
+- `app.services.fundamental_sync` 从Layer2排名生成按需请求并支持逐股续传；
+- `app.analysis.fundamentals` 接收标准观测值，纯计算盈利动量、经营质量和覆盖率。
+
+准备一次运行的基本面请求：
+
+```bash
+python -m app.cli.fundamentals
+```
+
+省略 `--run-id` 时使用 `latest_full_market.json` 指向的最近一次完整全市场运行；
+指定 `--run-id` 则可复现某个历史技术候选截面。
+
+默认取Layer2 Top 30、最近8个季度。AKShare同花顺财务摘要提供标准财务指标，
+东方财富业绩报表只补精确公告日期。结果包括：
+
+- `request.json`：候选范围及技术上下文；
+- `sync_summary.json`：获取、缓存、失败和写入数量；
+- `financial_quant.json`：每只股票的盈利动量分、经营质量分、覆盖率、缺失指标和
+  `IMPROVING/STABLE/DETERIORATING/UNCERTAIN` 初步状态。
+
+已缓存且未过期的数据会复用；单只股票失败不会中断其他股票，也不会改写Layer1/2。
+精确公告日期缺失时使用更晚的法定最晚披露日，并用 `availability_basis` 明确标记。
+为了避免同日收盘前偷看盘后公告，公告数据从下一自然日才视为可用。基本面结果
+仍不与技术分直接相加，后续组合阶段只把它用于排序、确认或否决。

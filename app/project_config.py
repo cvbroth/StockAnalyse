@@ -12,6 +12,7 @@ APP_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = APP_DIR.parent
 DEFAULT_CONFIG_PATH = PROJECT_DIR / "config" / "project.json"
 DEFAULT_DB_PATH = PROJECT_DIR / "data" / "market.db"
+DEFAULT_FUNDAMENTAL_DB_PATH = PROJECT_DIR / "data" / "fundamentals.db"
 DEFAULT_OUTPUT_PATH = PROJECT_DIR / "output"
 
 
@@ -87,10 +88,30 @@ def resolve_output_path(
     return DEFAULT_OUTPUT_PATH.resolve(), "默认值"
 
 
+def resolve_fundamental_database_path(
+    command_line_value: Path | None,
+    project_dir: Path = PROJECT_DIR,
+    config_path: Path | None = None,
+) -> tuple[Path, str]:
+    """选择独立基本面缓存库，不复用全市场行情库。"""
+
+    if command_line_value is not None:
+        return (
+            _resolve_project_path(project_dir, command_line_value),
+            "命令行 --fundamental-db",
+        )
+    config = load_project_config(project_dir, config_path)
+    configured = config.get("fundamental_database")
+    if configured:
+        return _resolve_project_path(project_dir, str(configured)), "项目配置"
+    return (project_dir / "data" / "fundamentals.db").resolve(), "默认值"
+
+
 def save_project_config(
     database: Path,
     data_provider: str,
     output_directory: Path | None = None,
+    fundamental_database: Path | None = None,
     project_dir: Path = PROJECT_DIR,
     config_path: Path | None = None,
 ) -> Path:
@@ -102,9 +123,19 @@ def save_project_config(
     if output_directory is None:
         configured_output = current.get("output_directory", "output")
         output_directory = _resolve_project_path(project_dir, configured_output)
+    if fundamental_database is None:
+        configured_fundamental = current.get(
+            "fundamental_database", "data/fundamentals.db"
+        )
+        fundamental_database = _resolve_project_path(
+            project_dir, configured_fundamental
+        )
     payload = {
         "version": CONFIG_VERSION,
         "database": _portable_path(project_dir, database),
+        "fundamental_database": _portable_path(
+            project_dir, fundamental_database
+        ),
         "output_directory": _portable_path(project_dir, output_directory),
         "data_provider": data_provider,
     }

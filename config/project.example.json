@@ -1,6 +1,7 @@
 {
   "version": 1,
   "database": "data/market_tx.db",
+  "fundamental_database": "data/fundamentals.db",
   "output_directory": "output",
   "data_provider": "tx"
 }

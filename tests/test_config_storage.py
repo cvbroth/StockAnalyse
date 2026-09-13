@@ -23,6 +23,7 @@ except ModuleNotFoundError:
 from market_db import connect_database, database_quality_report, set_metadata
 from project_config import (
     resolve_database_path,
+    resolve_fundamental_database_path,
     resolve_output_path,
     save_project_config,
 )
@@ -52,6 +53,16 @@ class ProjectConfigTests(unittest.TestCase):
             self.assertEqual(db_source, "项目配置")
             self.assertEqual(selected_output, (project / "output").resolve())
             self.assertEqual(output_source, "项目配置")
+            selected_fundamental, fundamental_source = (
+                resolve_fundamental_database_path(
+                    None, project_dir=project, config_path=config_path
+                )
+            )
+            self.assertEqual(
+                selected_fundamental,
+                (project / "data" / "fundamentals.db").resolve(),
+            )
+            self.assertEqual(fundamental_source, "项目配置")
 
     def test_command_line_database_overrides_project_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -94,6 +105,9 @@ class ProjectConfigTests(unittest.TestCase):
             )
             payload = json.loads(config_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["database"], "data/market.db")
+            self.assertEqual(
+                payload["fundamental_database"], "data/fundamentals.db"
+            )
             self.assertEqual(payload["output_directory"], "output")
 
 

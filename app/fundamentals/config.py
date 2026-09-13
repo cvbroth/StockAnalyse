@@ -1,0 +1,91 @@
+"""基本面数据收集配置读取与校验。"""
+
+from __future__ import annotations
+
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+
+PROJECT_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_FUNDAMENTAL_CONFIG_PATH = (
+    PROJECT_DIR / "config" / "analysis" / "fundamental.toml"
+)
+
+
+@dataclass(frozen=True)
+class FundamentalCollectionConfig:
+    financial_top_n: int = 30
+    research_top_n: int = 10
+    quarters: int = 8
+    stale_after_days: int = 7
+
+
+@dataclass(frozen=True)
+class FundamentalSettings:
+    version: str
+    enabled: bool
+    provider: str
+    collection: FundamentalCollectionConfig
+    path: Path
+
+
+def load_fundamental_settings(
+    path: Path | None = None,
+) -> FundamentalSettings:
+    config_path = (path or DEFAULT_FUNDAMENTAL_CONFIG_PATH).expanduser().resolve()
+    if not config_path.is_file():
+        raise RuntimeError(f"基本面配置不存在：{config_path}")
+    try:
+        with config_path.open("rb") as handle:
+            payload = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise RuntimeError(f"基本面配置读取失败：{config_path}：{exc}") from exc
+
+    version = payload.get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise RuntimeError("基本面配置必须提供非空 version")
+    enabled = payload.get("enabled")
+    provider = payload.get("provider")
+    values = payload.get("collection")
+    if not isinstance(enabled, bool):
+        raise RuntimeError("基本面配置 enabled 必须是布尔值")
+    if not isinstance(provider, str) or not provider.strip():
+        raise RuntimeError("基本面配置 provider 不能为空")
+    if not isinstance(values, dict):
+        raise RuntimeError("基本面配置必须提供 [collection] 区段")
+    expected = {
+        "financial_top_n", "research_top_n", "quarters", "stale_after_days"
+    }
+    unknown = sorted(set(values).difference(expected))
+    missing = sorted(expected.difference(values))
+    if unknown:
+        raise RuntimeError(f"基本面[collection]包含未知参数：{', '.join(unknown)}")
+    if missing:
+        raise RuntimeError(f"基本面[collection]缺少参数：{', '.join(missing)}")
+    try:
+        collection = FundamentalCollectionConfig(
+            financial_top_n=int(values["financial_top_n"]),
+            research_top_n=int(values["research_top_n"]),
+            quarters=int(values["quarters"]),
+            stale_after_days=int(values["stale_after_days"]),
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"基本面收集配置无效：{exc}") from exc
+    if collection.financial_top_n < 1:
+        raise RuntimeError("financial_top_n 必须至少为1")
+    if not 1 <= collection.research_top_n <= collection.financial_top_n:
+        raise RuntimeError("research_top_n 必须在1到financial_top_n之间")
+    if collection.quarters < 1:
+        raise RuntimeError("quarters 必须至少为1")
+    if collection.stale_after_days < 0:
+        raise RuntimeError("stale_after_days 不能为负数")
+    if enabled and provider == "none":
+        raise RuntimeError("启用基本面时 provider 不能是 none")
+    return FundamentalSettings(
+        version=version.strip(),
+        enabled=enabled,
+        provider=provider.strip(),
+        collection=collection,
+        path=config_path,
+    )

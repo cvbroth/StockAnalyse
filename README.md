@@ -62,6 +62,18 @@ python -m app.cli.screen --from-layer 2 --run-id <运行编号>
 python -m app.cli.evaluate --run-id <运行编号> --horizons 20 60
 ```
 
+为某次全市场运行准备按需基本面数据清单：
+
+```bash
+python -m app.cli.fundamentals
+```
+
+该命令从Layer2候选中选取配置的Top N，按需获取最近8个季度财务指标，写入独立的
+`data/fundamentals.db`，并生成盈利动量、经营质量和数据覆盖率。首次只想检查请求
+范围、不联网时可追加 `--prepare-only`。命令默认使用最近一次成功的全市场运行；
+只有处理历史快照时才需要 `--run-id <运行编号>`。基本面同步不会修改已有Layer1/2
+结果。
+
 旧命令 `app/update_market.py`、`app/screener_v1_2.py` 和 `app/run_daily.py`
 仍然可用，但新部署建议使用上面的模块化入口。
 
@@ -90,6 +102,9 @@ technical_top.json
 watchlist_ranked_4of5.json
 transitions.json
 errors.csv
+runs/<运行编号>/fundamental/request.json
+runs/<运行编号>/fundamental/sync_summary.json
+runs/<运行编号>/fundamental/financial_quant.json
 ```
 
 本项目输出的是技术条件筛选结果，不构成投资建议。实盘使用前应自行回测并评估

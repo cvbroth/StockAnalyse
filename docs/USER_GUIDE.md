@@ -11,14 +11,19 @@ a_share_screener/
 │   ├── cli/                稳定命令入口
 │   │   ├── update.py
 │   │   ├── screen.py
-│   │   └── daily.py
+│   │   ├── daily.py
+│   │   └── fundamentals.py   按需基本面同步与量化入口
 │   ├── providers/          可替换的数据源层
 │   │   ├── base.py
 │   │   ├── tencent.py
-│   │   └── tushare.py
+│   │   ├── tushare.py
+│   │   └── fundamentals/   基本面提供者协议与AKShare实现
 │   ├── services/           更新与筛选业务流程
 │   │   ├── market_update.py
-│   │   └── screening.py
+│   │   ├── screening.py
+│   │   ├── fundamental_sync.py
+│   │   └── fundamental_analysis.py
+│   ├── fundamentals/       基本面数据模型与配置
 │   ├── analysis/           与数据源无关的分层分析核心
 │   │   ├── contracts.py    层间标准输入和输出
 │   │   ├── pipeline.py     AnalysisEngine统一入口
@@ -27,17 +32,18 @@ a_share_screener/
 │   │   ├── history.py      运行快照
 │   │   ├── transitions.py  跨日状态变化
 │   │   ├── evaluation.py   历史效果评估
-│   │   ├── fundamentals/   基本面提供者协议
+│   │   ├── fundamentals/   基本面分析结果协议与八季度量化
 │   │   ├── engine.py       旧分析函数兼容门面
 │   │   └── outputs.py
 │   ├── storage/
-│   │   └── sqlite.py       SQLite存储实现
+│   │   ├── sqlite.py       全市场行情库
+│   │   └── fundamentals_sqlite.py  稀疏基本面缓存库
 │   ├── legacy/             v1.1直接联网兼容实现
 │   ├── project_config.py   项目级数据库/输出目录配置
 │   ├── update_market.py    旧命令兼容入口
 │   ├── screener_v1_2.py    旧命令兼容入口
 │   └── run_daily.py        旧命令兼容入口
-├── data/                 SQLite 行情数据库
+├── data/                 行情库与独立基本面缓存库
 ├── config/               项目配置和版本化分析参数
 ├── output/               JSON、CSV 筛选结果
 ├── tests/                无网络自动化测试
@@ -336,8 +342,104 @@ output/
 python -m app.cli.evaluate --run-id <运行编号> --horizons 20 60
 ```
 
-评估结果保存在对应运行目录的 `evaluation.json` 和 `evaluation.csv`。基本面接口
-目前默认关闭，不会自动联网，也不会生成虚假的基本面分。
+评估结果保存在对应运行目录的 `evaluation.json` 和 `evaluation.csv`。
+
+## 按需同步与量化基本面
+
+基本面使用独立的 `data/fundamentals.db`，不会写入全市场行情数据库。完成一次
+全市场筛选后，可以从Layer2排名准备按需数据请求：
+
+```bash
+python -m app.cli.screen --all
+python -m app.cli.fundamentals
+```
+
+这里的“运行编号”不是股票代码，也不是数据库名称，而是一次完整全市场筛选的快照
+标识。例如：
+
+```text
+20260911-153000123456
+```
+
+前8位 `20260911` 是该次分析使用的行情截止日期，后半段是创建快照的时间和微秒，
+用于保证编号唯一。对应文件夹为：
+
+```text
+output/runs/20260911-153000123456/
+```
+
+每次 `python -m app.cli.screen --all` 成功后都会在终端打印“运行快照”路径，并把
+编号记录到 `output/runs/latest_full_market.json`。因此日常处理最新结果时直接运行
+`python -m app.cli.fundamentals` 即可，程序会自动选择它。只有要重新分析某一次
+历史筛选结果时才手工指定：
+
+```bash
+python -m app.cli.fundamentals --run-id 20260911-153000123456
+```
+
+默认选取Top 30并请求最近8个季度，参数位于
+`config/analysis/fundamental.toml`。请求文件保存在：
+
+```text
+output/runs/<运行编号>/fundamental/request.json
+```
+
+需要临时改变范围时：
+
+```bash
+python -m app.cli.fundamentals --run-id <运行编号> --top-n 20 --quarters 8
+```
+
+参数含义：
+
+| 参数 | 是否必需 | 含义 |
+|---|---|---|
+| `--run-id` | 否 | 指定历史全市场快照；省略时自动使用最近一次成功运行 |
+| `--top-n` | 否 | 从Layer2候选排名中最多分析多少只；默认读取配置，目前为30 |
+| `--quarters` | 否 | 每只股票最多使用多少个已公开季度；默认8 |
+| `--prepare-only` | 否 | 只生成候选请求并检查范围，不访问外部财务接口 |
+| `--timeout` | 否 | 公告日期辅助请求的超时秒数，默认15 |
+| `--retries` | 否 | 每只股票接口失败后的总尝试次数，默认3 |
+| `--output-dir` | 否 | 指定筛选快照所在结果目录；通常无需填写 |
+| `--fundamental-db` | 否 | 指定独立基本面缓存库；通常无需填写 |
+| `--config` | 否 | 指定另一份基本面TOML配置文件 |
+
+例如，只先查看最新运行中排名前5只候选，不联网：
+
+```bash
+python -m app.cli.fundamentals --top-n 5 --prepare-only
+```
+
+确认范围无误后正式同步同一批候选：
+
+```bash
+python -m app.cli.fundamentals --top-n 5
+```
+
+默认命令会执行三步：登记候选、同步真实财务数据、计算八季度量化结果。数据源为
+AKShare同花顺财务摘要；东方财富接口只用于补充精确公告日期。每只未命中缓存的
+股票通常需要两次请求，已完成且未过期的数据会直接复用。
+
+只想检查候选范围而不联网：
+
+```bash
+python -m app.cli.fundamentals --prepare-only
+```
+
+运行目录新增：
+
+```text
+fundamental/
+├── request.json
+├── sync_summary.json
+└── financial_quant.json
+```
+
+量化结果分别给出 `earnings_momentum`、`business_quality`、数据覆盖率、缺失指标和
+初步状态。缺失项不会按0分处罚，而是降低覆盖率并标为 `partial` 或 `insufficient`。
+公告日期按下一自然日开始可用；精确日期取不到时使用法定最晚披露日并留下
+`conservative_deadline` 标记，防止历史截面误用未来财报。单只股票失败会记录并
+继续，始终不会破坏Layer1/2结果。
 
 ## 常用维护命令
 

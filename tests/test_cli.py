@@ -58,6 +58,12 @@ class CliCompatibilityTests(unittest.TestCase):
         self.assertIn("--run-id", result.stdout)
         self.assertIn("--horizons", result.stdout)
 
+    def test_fundamental_preparation_entry(self) -> None:
+        result = self.run_help("-m", "app.cli.fundamentals")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--fundamental-db", result.stdout)
+        self.assertIn("--run-id", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
