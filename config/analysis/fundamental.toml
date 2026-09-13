@@ -1,0 +1,5 @@
+version = "fundamental-interface-v1"
+enabled = false
+provider = "none"
+
+# 基本面层只负责排序或否决，不与技术分直接相加。

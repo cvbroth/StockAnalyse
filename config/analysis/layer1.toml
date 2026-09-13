@@ -1,0 +1,16 @@
+version = "layer1-v1.2-baseline"
+
+[screen]
+min_history_days = 120
+structure_window = 20
+volume_window = 20
+up_down_volume_ratio = 1.15
+breakout_lookback = 60
+breakout_search_days = 20
+breakout_volume_multiple = 1.30
+breakout_max_fall = 0.03
+excess_return_60d = 0.08
+market_percentile_cutoff = 0.70
+max_stale_calendar_days = 10
+min_average_volume_lots = 0.0
+exclude_st = true

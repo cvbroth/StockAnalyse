@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import json
 import tempfile
 import unittest
 from datetime import date, timedelta
@@ -180,6 +181,20 @@ class ScreeningIntegrationTests(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertTrue((output / "candidates.json").is_file())
             self.assertTrue((output / "errors.csv").is_file())
+            self.assertTrue((output / "technical_top.json").is_file())
+            self.assertTrue((output / "transitions.json").is_file())
+            pointer = json.loads(
+                (output / "runs" / "latest_full_market.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            manifest = json.loads(
+                (
+                    output / "runs" / pointer["run_id"] / "manifest.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["version"], "1.3")
+            self.assertEqual(len(manifest["analysis_config_hash"]), 64)
 
 
 if __name__ == "__main__":

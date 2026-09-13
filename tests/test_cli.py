@@ -40,6 +40,7 @@ class CliCompatibilityTests(unittest.TestCase):
                 result = self.run_help(*arguments)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--symbols", result.stdout)
+                self.assertIn("--analysis-config", result.stdout)
 
     def test_daily_old_and_new_entries(self) -> None:
         for arguments in (
@@ -50,6 +51,12 @@ class CliCompatibilityTests(unittest.TestCase):
                 result = self.run_help(*arguments)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output-dir", result.stdout)
+
+    def test_evaluation_entry(self) -> None:
+        result = self.run_help("-m", "app.cli.evaluate")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--run-id", result.stdout)
+        self.assertIn("--horizons", result.stdout)
 
 
 if __name__ == "__main__":

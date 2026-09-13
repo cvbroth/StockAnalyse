@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A 股上升周期筛选器 v1.2：完全从本地 SQLite 读取行情。"""
+"""A 股上升周期筛选器 v1.3：分层分析与历史追踪。"""
 
 from __future__ import annotations
 
@@ -15,11 +15,21 @@ import pandas as pd
 from ..analysis import (
     ScreenConfig,
     analyze_stock,
+    analysis_config_hash,
+    apply_transitions,
+    apply_screen_overrides,
     apply_market_percentiles,
+    create_run_id,
+    load_layer1_config,
+    load_layer2_config,
+    load_latest_full_market,
+    load_run_snapshot,
     mark_percentile_not_required,
     normalize_code,
     refresh_score,
+    rank_layer2_records,
     write_outputs,
+    write_run_snapshot,
 )
 from ..storage.sqlite import (
     connect_database,
@@ -36,7 +46,7 @@ from ..project_config import (
 )
 
 
-VERSION = "1.2"
+VERSION = "1.3"
 HS300_SYMBOL = "sh000300"
 APP_DIR = Path(__file__).resolve().parent
 
@@ -134,7 +144,7 @@ def parse_yyyymmdd(value: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="A 股上升周期筛选器 v1.2（SQLite 本地行情版）"
+        description="A 股上升周期筛选器 v1.3（分层分析版）"
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument(
@@ -145,6 +155,13 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         metavar="代码",
         help="小样本检查模式；不计算、不强制样本内百分位",
+    )
+    mode.add_argument(
+        "--from-layer",
+        type=int,
+        choices=(2,),
+        metavar="N",
+        help="从已有快照的第N层重新运行；当前支持2",
     )
     parser.add_argument(
         "--db",
@@ -159,6 +176,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="输出目录；省略时读取 config/project.json",
     )
     parser.add_argument(
+        "--analysis-config",
+        type=Path,
+        default=None,
+        help="第一层TOML配置路径；默认 config/analysis/layer1.toml",
+    )
+    parser.add_argument(
+        "--quality-config",
+        type=Path,
+        default=None,
+        help="第二层TOML评分配置；默认 config/analysis/layer2.toml",
+    )
+    parser.add_argument(
+        "--run-id",
+        help="与 --from-layer 配合使用的历史运行编号",
+    )
+    parser.add_argument(
         "--end-date", type=parse_yyyymmdd, help="历史截面日期 YYYYMMDD；默认数据库最新日期"
     )
     parser.add_argument(
@@ -170,23 +203,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--percentile-cutoff",
         type=float,
-        default=0.70,
-        help="全市场百分位门槛，0.70 表示前 30%%",
+        default=None,
+        help="覆盖配置中的全市场百分位门槛；0.70 表示前30%%",
     )
     parser.add_argument(
-        "--min-history-days", type=int, default=120, help="个股最少历史交易日"
+        "--min-history-days", type=int, default=None, help="覆盖配置中的个股最少历史交易日"
     )
     parser.add_argument(
         "--min-average-volume-lots",
         type=float,
-        default=0.0,
-        help="近20日最低日均成交量（手）",
+        default=None,
+        help="覆盖配置中的近20日最低日均成交量（手）",
     )
     parser.add_argument(
         "--max-stale-calendar-days",
         type=int,
-        default=10,
-        help="最近交易日距离截面日期的最大自然日数",
+        default=None,
+        help="覆盖配置中的最大行情陈旧自然日数",
     )
     parser.add_argument("--include-st", action="store_true", help="允许 ST/*ST 股票")
     parser.add_argument(
@@ -201,18 +234,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if args.from_layer is not None and not args.run_id:
+        parser.error("--from-layer 必须同时提供 --run-id")
+    if args.from_layer is None and args.run_id:
+        parser.error("--run-id 只能与 --from-layer 一起使用")
     if args.history_dates < 80:
         parser.error("--history-dates 至少为 80，建议使用 250")
-    if args.min_history_days < 80:
-        parser.error("--min-history-days 至少为 80")
-    if args.history_dates < args.min_history_days:
+    if args.history_dates < args.screen_config.min_history_days:
         parser.error("--history-dates 不能小于 --min-history-days")
-    if not 0 < args.percentile_cutoff <= 1:
-        parser.error("--percentile-cutoff 必须位于 (0, 1] 区间")
-    if args.min_average_volume_lots < 0:
-        parser.error("--min-average-volume-lots 不能为负数")
-    if args.max_stale_calendar_days < 0:
-        parser.error("--max-stale-calendar-days 不能为负数")
     if args.limit is not None and args.limit < 1:
         parser.error("--limit 至少为 1")
     if args.progress_every < 0:
@@ -232,11 +261,62 @@ def resolve_requested_codes(args: argparse.Namespace) -> list[str] | None:
     return result
 
 
+def rerun_layer2(args: argparse.Namespace) -> int:
+    try:
+        parent_manifest, records = load_run_snapshot(
+            args.output_dir.resolve(),
+            args.run_id,
+        )
+        rank_layer2_records(records, args.layer2_config)
+        end_date = str(parent_manifest["end_date"])
+        parent_config_values = parent_manifest.get("config")
+        if not isinstance(parent_config_values, dict):
+            raise RuntimeError("父运行缺少第一层完整配置，不能安全重跑第二层")
+        parent_layer1_config = ScreenConfig(**parent_config_values)
+        run_id = create_run_id(end_date)
+        metadata = {
+            **parent_manifest,
+            "run_id": run_id,
+            "parent_run_id": args.run_id,
+            "mode": "layer2_rerun",
+            "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "layer2_config_version": args.layer2_config_version,
+            "layer2_config_path": str(args.quality_config),
+            "analysis_config_hash": analysis_config_hash(
+                parent_layer1_config,
+                args.layer2_config,
+            ),
+            "quality_confirmed_top_n": args.layer2_config.confirmed_top_n,
+            "quality_watchlist_top_n": args.layer2_config.watchlist_top_n,
+        }
+        run_dir = write_run_snapshot(
+            args.output_dir.resolve(),
+            run_id,
+            records,
+            metadata,
+            update_latest=False,
+        )
+        reports_dir = run_dir / "reports"
+        write_outputs(reports_dir, records, [], metadata)
+    except Exception as exc:
+        print(f"第二层重跑失败：{exc}", file=sys.stderr)
+        return 2
+    print(f"第二层重跑完成；父运行：{args.run_id}")
+    print(f"研究结果：{reports_dir}")
+    print("本次研究重跑不会替换每日全市场最新运行指针。")
+    return 0
+
+
 def run_screen(args: argparse.Namespace) -> int:
+    if args.from_layer == 2:
+        return rerun_layer2(args)
     connection = connect_database(args.db)
     try:
         stats = database_stats(connection)
-        quality = database_quality_report(connection, args.min_history_days)
+        quality = database_quality_report(
+            connection,
+            args.screen_config.min_history_days,
+        )
         provider_labels = {
             "tx": "腾讯前复权（沪深）",
             "tushare": "Tushare原始日线+复权因子（沪深京）",
@@ -325,13 +405,7 @@ def run_screen(args: argparse.Namespace) -> int:
     scan_codes = sorted(bars["code"].astype(str).unique().tolist())
     if args.limit is not None:
         scan_codes = scan_codes[: args.limit]
-    config = ScreenConfig(
-        min_history_days=args.min_history_days,
-        market_percentile_cutoff=args.percentile_cutoff,
-        max_stale_calendar_days=args.max_stale_calendar_days,
-        min_average_volume_lots=args.min_average_volume_lots,
-        exclude_st=not args.include_st,
-    )
+    config: ScreenConfig = args.screen_config
 
     print(
         f"本地扫描开始：{len(scan_codes)} 只，截面日期 {analysis_end}，"
@@ -390,6 +464,30 @@ def run_screen(args: argparse.Namespace) -> int:
         print(f"百分位计算失败：{exc}", file=sys.stderr)
         return 2
 
+    try:
+        rank_layer2_records(records, args.layer2_config)
+    except Exception as exc:
+        print(f"第二层质量评分失败：{exc}", file=sys.stderr)
+        return 2
+
+    canonical_full_market = bool(args.all and args.limit is None)
+    previous_run_id: str | None = None
+    previous_records: list[dict[str, Any]] = []
+    if canonical_full_market:
+        try:
+            previous_run_id, previous_records = load_latest_full_market(
+                args.output_dir.resolve()
+            )
+        except RuntimeError as exc:
+            print(f"历史运行状态读取失败：{exc}", file=sys.stderr)
+            return 2
+    transition_counts = apply_transitions(
+        records,
+        previous_records,
+        previous_run_id,
+    )
+    run_id = create_run_id(analysis_end)
+
     market_scope = "沪深" if stats["data_provider"] == "tx" else "沪深京"
     stock_data_source = (
         "SQLite: AKShare Tencent qfq"
@@ -400,6 +498,9 @@ def run_screen(args: argparse.Namespace) -> int:
         "screener": "A 股上升周期筛选器",
         "version": VERSION,
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "run_id": run_id,
+        "previous_run_id": previous_run_id,
+        "transition_counts": transition_counts,
         "mode": "all" if args.all else "symbols",
         "end_date": analysis_end,
         "stock_data_source": stock_data_source,
@@ -424,9 +525,29 @@ def run_screen(args: argparse.Namespace) -> int:
                 else "小样本模式不计算、也不强制市场百分位"
             )
         ),
+        "layer1_config_version": args.layer1_config_version,
+        "layer1_config_path": str(args.analysis_config),
+        "layer2_config_version": args.layer2_config_version,
+        "layer2_config_path": str(args.quality_config),
+        "analysis_config_hash": analysis_config_hash(config, args.layer2_config),
+        "quality_confirmed_top_n": args.layer2_config.confirmed_top_n,
+        "quality_watchlist_top_n": args.layer2_config.watchlist_top_n,
         "config": asdict(config),
     }
     write_outputs(args.output_dir.resolve(), records, errors, metadata)
+    snapshot_dir: Path | None = None
+    if canonical_full_market:
+        try:
+            snapshot_dir = write_run_snapshot(
+                args.output_dir.resolve(),
+                run_id,
+                records,
+                metadata,
+                update_latest=True,
+            )
+        except Exception as exc:
+            print(f"运行快照保存失败：{exc}", file=sys.stderr)
+            return 2
 
     confirmed = sum(bool(record["technical_pass"]) for record in records)
     watchlist = sum(
@@ -437,12 +558,23 @@ def run_screen(args: argparse.Namespace) -> int:
     print("本地扫描完成。")
     print(f"成功分析：{len(records)}；失败/跳过：{len(errors)}")
     print(f"5/5 技术确认：{confirmed}；4/5 观察池：{watchlist}")
+    print(
+        f"第二层质量排名：A池展示Top {args.layer2_config.confirmed_top_n}；"
+        f"B池展示Top {args.layer2_config.watchlist_top_n}"
+    )
+    if canonical_full_market:
+        print(
+            f"状态变化：新进入5/5 {transition_counts.get('newly_5of5', 0)}；"
+            f"退回4/5 {transition_counts.get('downgraded_to_4of5', 0)}"
+        )
     if args.all:
         scope = f"{market_scope}全市场" if percentile_is_full_market else "受限集合"
         print(f"60 日收益百分位：{scope}，有效样本 {percentile_universe_size}")
     else:
         print("60 日收益百分位：N/A（小样本模式不强制）")
     print(f"结果目录：{args.output_dir.resolve()}")
+    if snapshot_dir is not None:
+        print(f"运行快照：{snapshot_dir}")
     return 0
 
 
@@ -452,13 +584,38 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args.db, args.db_source = resolve_database_path(args.db)
         args.output_dir, args.output_source = resolve_output_path(args.output_dir)
-    except RuntimeError as exc:
+        loaded_config = load_layer1_config(args.analysis_config)
+        loaded_layer2 = load_layer2_config(args.quality_config)
+        args.screen_config = apply_screen_overrides(
+            loaded_config.screen,
+            min_history_days=args.min_history_days,
+            market_percentile_cutoff=args.percentile_cutoff,
+            max_stale_calendar_days=args.max_stale_calendar_days,
+            min_average_volume_lots=args.min_average_volume_lots,
+            exclude_st=False if args.include_st else None,
+        )
+        args.analysis_config = loaded_config.path
+        args.layer1_config_version = loaded_config.version
+        args.layer2_config = loaded_layer2.quality
+        args.quality_config = loaded_layer2.path
+        args.layer2_config_version = loaded_layer2.version
+    except (RuntimeError, ValueError) as exc:
         parser.error(str(exc))
     validate_args(args, parser)
     print(f"数据库选择：{args.db_source} → {args.db}", flush=True)
     print(f"结果目录：{args.output_source} → {args.output_dir}", flush=True)
+    print(
+        f"第一层配置：{args.layer1_config_version} → {args.analysis_config}",
+        flush=True,
+    )
+    print(
+        f"第二层配置：{args.layer2_config_version} → {args.quality_config}",
+        flush=True,
+    )
     return run_screen(args)
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+    create_run_id,
+    load_latest_full_market,

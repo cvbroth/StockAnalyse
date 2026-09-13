@@ -3,6 +3,9 @@
 将A股历史行情保存在本地SQLite数据库中，再计算趋势结构、均线、量价、突破回踩、
 相对沪深300强度和全市场60日收益百分位。
 
+v1.3在原有五项资格筛选后增加100分技术质量排名、过热惩罚、跨日状态变化和
+历史20/60日效果评估。
+
 支持两种初始化数据源：
 
 - 腾讯前复权：免费、无需Token，覆盖沪深股票。
@@ -38,6 +41,27 @@ python -m app.cli.daily
 python -m app.cli.screen --symbols 603505 600519 000858
 ```
 
+五项筛选参数集中在 `config/analysis/layer1.toml`。配置带有版本号，运行结果会
+记录实际使用的版本和路径。需要临时使用另一份配置时：
+
+```bash
+python -m app.cli.screen --all --analysis-config config/analysis/layer1.toml
+```
+
+命令行提供的单项参数优先于TOML配置。
+
+查看A池、B池质量排名后，如果只调整第二层参数，可以复用已有运行快照：
+
+```bash
+python -m app.cli.screen --from-layer 2 --run-id <运行编号>
+```
+
+积累到足够的未来行情后评估评分有效性：
+
+```bash
+python -m app.cli.evaluate --run-id <运行编号> --horizons 20 60
+```
+
 旧命令 `app/update_market.py`、`app/screener_v1_2.py` 和 `app/run_daily.py`
 仍然可用，但新部署建议使用上面的模块化入口。
 
@@ -48,6 +72,7 @@ python -m app.cli.screen --symbols 603505 600519 000858
 - [Ubuntu服务器安装与后台运行](docs/UBUNTU.md)
 - [数据源选择与复权方式](docs/DATA_SOURCES.md)
 - [项目架构](docs/ARCHITECTURE.md)
+- [分层分析引擎](docs/ANALYSIS_ENGINE.md)
 - [常见故障排查](docs/TROUBLESHOOTING.md)
 - [开发与测试](docs/DEVELOPMENT.md)
 
@@ -60,6 +85,10 @@ candidates.json
 candidates.csv
 technical_pass_5of5.json
 watchlist_4of5.json
+technical_ranked_5of5.json
+technical_top.json
+watchlist_ranked_4of5.json
+transitions.json
 errors.csv
 ```
 

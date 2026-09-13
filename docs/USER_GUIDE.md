@@ -1,7 +1,7 @@
 # 完整使用手册
 
-v1.2 把“下载行情”和“筛选股票”分开：行情先写入 SQLite，五项技术条件和
-全市场 60 日收益百分位随后完全在本地计算。
+v1.3把“下载行情”和“分层分析”分开：行情先写入SQLite，五项资格、技术质量
+排名、状态变化和全市场60日收益百分位随后完全在本地计算。
 
 ## 目录结构
 
@@ -19,9 +19,16 @@ a_share_screener/
 │   ├── services/           更新与筛选业务流程
 │   │   ├── market_update.py
 │   │   └── screening.py
-│   ├── analysis/           与数据源无关的分析核心
-│   │   ├── models.py
-│   │   ├── engine.py
+│   ├── analysis/           与数据源无关的分层分析核心
+│   │   ├── contracts.py    层间标准输入和输出
+│   │   ├── pipeline.py     AnalysisEngine统一入口
+│   │   ├── layer1/         五项资格筛选模块
+│   │   ├── layer2/         质量评分与过热惩罚
+│   │   ├── history.py      运行快照
+│   │   ├── transitions.py  跨日状态变化
+│   │   ├── evaluation.py   历史效果评估
+│   │   ├── fundamentals/   基本面提供者协议
+│   │   ├── engine.py       旧分析函数兼容门面
 │   │   └── outputs.py
 │   ├── storage/
 │   │   └── sqlite.py       SQLite存储实现
@@ -31,7 +38,7 @@ a_share_screener/
 │   ├── screener_v1_2.py    旧命令兼容入口
 │   └── run_daily.py        旧命令兼容入口
 ├── data/                 SQLite 行情数据库
-├── config/               项目配置示例
+├── config/               项目配置和版本化分析参数
 ├── output/               JSON、CSV 筛选结果
 ├── tests/                无网络自动化测试
 ├── README.md             使用说明
@@ -69,6 +76,18 @@ python app/run_daily.py
 `--db` 或 `--output-dir` 优先级更高。配置文件不含Token且已被Git忽略。
 
 如果尚未生成项目配置，则兼容旧版本，默认使用 `data/market.db` 和 `output/`。
+
+五项资格筛选参数位于 `config/analysis/layer1.toml`。文件中的默认值与重构前完全
+一致，`version` 会随结果一起保存。需要试验另一套参数时，建议复制并修改配置，
+再明确指定：
+
+```bash
+python -m app.cli.screen --all --analysis-config config/analysis/layer1.toml
+```
+
+命令行的 `--percentile-cutoff`、`--min-history-days`、
+`--min-average-volume-lots`、`--max-stale-calendar-days` 和 `--include-st`
+仍然可用，并且优先于配置文件。
 
 ## 1. 安装依赖
 
@@ -237,6 +256,20 @@ python -m app.cli.screen --symbols 603505 600519 000858
 小样本模式不会用三只股票之间的排名冒充全市场百分位。该字段为 `N/A`，也不
 参与相对强度条件。
 
+全市场扫描完成后，5/5和4/5股票会分别按第二层技术质量分排序。评分参数位于
+`config/analysis/layer2.toml`，默认展示A池Top25和B池Top30。质量分只用于池内
+排序，不会把4/5股票提升为5/5。
+
+完整全市场运行会生成运行编号和历史快照。只修改第二层参数时，无需重新扫描
+五千多只股票：
+
+```bash
+python -m app.cli.screen --from-layer 2 --run-id <运行编号>
+```
+
+第一次运行的股票标记为 `first_observation`。从第二次完整全市场运行开始，程序
+才会识别 `newly_5of5` 等真实状态变化。
+
 ## 5. 每日运行
 
 完成首次初始化后，每个交易日收盘数据更新完毕再执行：
@@ -289,8 +322,22 @@ output/
 ├── candidates.csv
 ├── technical_pass_5of5.json
 ├── watchlist_4of5.json
+├── technical_ranked_5of5.json
+├── technical_top.json
+├── watchlist_ranked_4of5.json
+├── transitions.json
 └── errors.csv
 ```
+
+每次完整全市场运行还会保存到 `output/runs/<run-id>/`。数据库积累到该运行日
+之后至少20或60个交易日时，可以评价当时的评分表现：
+
+```bash
+python -m app.cli.evaluate --run-id <运行编号> --horizons 20 60
+```
+
+评估结果保存在对应运行目录的 `evaluation.json` 和 `evaluation.csv`。基本面接口
+目前默认关闭，不会自动联网，也不会生成虚假的基本面分。
 
 ## 常用维护命令
 

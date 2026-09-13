@@ -18,6 +18,8 @@ CSV_FIELDS = (
     "market_percentile_required", "base_filters_passed", "price_structure",
     "ma_trend", "volume_price", "breakout_retest", "relative_strength",
     "technical_score", "technical_pass", "tier",
+    "technical_quality_score", "overheat_penalty", "quality_rank",
+    "quality_comparable", "missing_conditions",
 )
 
 
@@ -40,6 +42,7 @@ def json_safe(value: Any) -> Any:
 
 def flatten_record(record: dict[str, Any]) -> dict[str, Any]:
     relative = record["conditions"]["relative_strength"]["detail"]
+    quality = record.get("quality", {})
     return {
         "code": record["code"],
         "name": record["name"],
@@ -62,6 +65,11 @@ def flatten_record(record: dict[str, Any]) -> dict[str, Any]:
         "technical_score": record["technical_score"],
         "technical_pass": record["technical_pass"],
         "tier": record["tier"],
+        "technical_quality_score": quality.get("technical_quality_score"),
+        "overheat_penalty": quality.get("overheat_penalty"),
+        "quality_rank": quality.get("rank_within_tier"),
+        "quality_comparable": quality.get("score_comparable_to_full_market"),
+        "missing_conditions": ",".join(quality.get("missing_conditions", [])),
     }
 
 
@@ -81,7 +89,11 @@ def write_outputs(
     output_dir.mkdir(parents=True, exist_ok=True)
     eligible = [record for record in records if record["base_filters"]["passed"]]
     eligible.sort(
-        key=lambda item: (item["technical_score"], item["metrics"]["return_60d"]),
+        key=lambda item: (
+            item["technical_score"],
+            item.get("quality", {}).get("technical_quality_score", -1.0),
+            item["metrics"]["return_60d"],
+        ),
         reverse=True,
     )
     candidates = [record for record in eligible if record["technical_score"] >= 3]
@@ -94,6 +106,23 @@ def write_outputs(
             record for record in eligible if record["technical_score"] == 4
         ],
     }
+    confirmed = selections["technical_pass_5of5.json"]
+    watchlist = selections["watchlist_4of5.json"]
+    confirmed_top_n = int(metadata.get("quality_confirmed_top_n", 25))
+    watchlist_top_n = int(metadata.get("quality_watchlist_top_n", 30))
+    selections.update(
+        {
+            "technical_ranked_5of5.json": confirmed,
+            "technical_top.json": confirmed[:confirmed_top_n],
+            "watchlist_ranked_4of5.json": watchlist[:watchlist_top_n],
+            "transitions.json": [
+                record
+                for record in candidates
+                if record.get("transition", {}).get("status")
+                not in {None, "unchanged", "still_5of5"}
+            ],
+        }
+    )
     for filename, selected_records in selections.items():
         write_json(
             output_dir / filename,

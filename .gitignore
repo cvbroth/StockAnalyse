@@ -11,6 +11,7 @@ data/*.db-wal
 # 每次运行生成的筛选结果
 output/*.json
 output/*.csv
+output/runs/
 
 # 本地密钥配置
 .env

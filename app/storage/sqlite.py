@@ -532,6 +532,36 @@ def load_recent_daily_bars(
     return pd.read_sql_query(query, connection, params=params)
 
 
+def load_daily_bars_range(
+    connection: sqlite3.Connection,
+    start_date: str,
+    codes: Iterable[str],
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    """读取指定股票从某日开始的行情，用于分析结果的向前验证。"""
+
+    normalized_codes = sorted({str(code).zfill(6) for code in codes})
+    if not normalized_codes:
+        return pd.DataFrame()
+    frames: list[pd.DataFrame] = []
+    for offset in range(0, len(normalized_codes), 800):
+        chunk = normalized_codes[offset:offset + 800]
+        placeholders = ",".join("?" for _ in chunk)
+        clauses = [f"code IN ({placeholders})", "trade_date >= ?"]
+        params: list[Any] = [*chunk, start_date]
+        if end_date:
+            clauses.append("trade_date <= ?")
+            params.append(end_date)
+        query = f"""
+            SELECT code, trade_date, close, adj_factor, source
+            FROM daily_bars
+            WHERE {' AND '.join(clauses)}
+            ORDER BY code, trade_date
+        """
+        frames.append(pd.read_sql_query(query, connection, params=params))
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
 def load_index_bars(
     connection: sqlite3.Connection,
     symbol: str = "sh000300",
