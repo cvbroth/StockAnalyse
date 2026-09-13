@@ -24,6 +24,10 @@ Layer3研究任务另外经过 `app.research`。这一层只编排外部结构�
 - `app/research/`：逐股研究工作区、结果提供者协议、续跑和失败隔离。
 - `skills/a-share-fundamental/`：OpenClaw固定研究流程、评分规则和输出契约。
 - `scripts/openclaw_research.sh`：Ubuntu无固定项目路径的OpenClaw启动器。
+- `app.services.daily_pipeline`：跨阶段状态机、失败恢复和同交易日去重。
+- `app.services.daily_report`：把技术与Layer3结果汇总为稳定JSON和可读Markdown。
+- `scripts/daily_pipeline.sh`：完整流水线的项目相对路径启动器。
+- `scripts/install_openclaw_automation.sh`：OpenClaw定时任务预览与显式安装器。
 - `app/analysis/`：不访问网络和数据库的纯分析逻辑。
 - `app/legacy/`：只为旧版直接联网命令保留。
 
@@ -114,6 +118,21 @@ AnalysisEngine
 
 OpenClaw Skill不是分析核心的一部分。它读取 `work_items`，把未经信任的候选结果
 写入 `inbox`；Python执行器仍是进入 `results` 和Layer3的唯一校验边界。
+
+## 每日自动流水线
+
+```text
+app.cli.pipeline
+   ├── app.cli.daily          行情更新 + Layer1/2全市场运行
+   ├── app.cli.fundamentals   稀疏财务同步 + 财务量化
+   ├── OpenClaw Skill         Layer3证据研究
+   └── app.cli.report         JSON + Markdown报告
+```
+
+编排器不把四个阶段揉进同一模块，而是以子进程调用稳定CLI边界。阶段命令、返回码、
+起止时间和状态原子写入 `output/pipeline_state.json`；运行快照内保存副本。研究失败
+不会破坏技术和财务结果，报告也能明确展示未完成项。相同交易日重复运行时会复用
+上一份终态报告，避免再次消耗基本面接口和模型资源。
 
 ## 兼容入口
 

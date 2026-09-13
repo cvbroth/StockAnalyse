@@ -1,5 +1,8 @@
 # Windows安装与运行
 
+完整的跨平台部署、数据源选择和验收步骤见 [部署教程](DEPLOYMENT.md)。本文保留
+Windows PowerShell常用命令速查。
+
 以下命令使用PowerShell，并假设终端位于项目根目录。
 
 ## 创建独立Python环境

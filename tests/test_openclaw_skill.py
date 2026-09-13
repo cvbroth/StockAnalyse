@@ -62,6 +62,25 @@ class OpenClawSkillTests(unittest.TestCase):
         self.assertNotIn("eval ", launcher)
         self.assertNotIn("/home/chen", launcher)
 
+    def test_daily_automation_scripts_are_project_relative_and_safe_by_default(self) -> None:
+        daily = (PROJECT_DIRECTORY / "scripts" / "daily_pipeline.sh").read_text(
+            encoding="utf-8"
+        )
+        installer = (
+            PROJECT_DIRECTORY / "scripts" / "install_openclaw_automation.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("-m app.cli.pipeline", daily)
+        self.assertIn('project_directory="$(cd', daily)
+        self.assertIn("apply=false", installer)
+        self.assertIn("--command-argv", installer)
+        self.assertIn("--command-cwd", installer)
+        self.assertIn("--exact", installer)
+        self.assertIn("--no-deliver", installer)
+        self.assertIn("Asia/Shanghai", installer)
+        self.assertIn("0 18 * * 1-5", installer)
+        self.assertNotIn("eval ", installer)
+        self.assertNotIn("/home/chen", daily + installer)
+
 
 if __name__ == "__main__":
     unittest.main()

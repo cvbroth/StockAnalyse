@@ -3,6 +3,11 @@
 v1.3把“下载行情”和“分层分析”分开：行情先写入SQLite，五项资格、技术质量
 排名、状态变化和全市场60日收益百分位随后完全在本地计算。
 
+新机器安装请先阅读 [部署教程](DEPLOYMENT.md)，逐项查参数使用
+[参数手册](PARAMETERS.md)。调试评分时以
+[技术分析公式](TECHNICAL_FORMULAS.md) 和
+[基本面分析公式](FUNDAMENTAL_FORMULAS.md) 为准。
+
 ## 目录结构
 
 ```text
@@ -12,7 +17,10 @@ a_share_screener/
 │   │   ├── update.py
 │   │   ├── screen.py
 │   │   ├── daily.py
-│   │   └── fundamentals.py   按需基本面同步与量化入口
+│   │   ├── fundamentals.py   按需基本面同步与量化入口
+│   │   ├── research.py       Layer3逐股研究工作区入口
+│   │   ├── report.py         最终研究报告入口
+│   │   └── pipeline.py       每日完整流水线入口
 │   ├── providers/          可替换的数据源层
 │   │   ├── base.py
 │   │   ├── tencent.py
@@ -22,7 +30,9 @@ a_share_screener/
 │   │   ├── market_update.py
 │   │   ├── screening.py
 │   │   ├── fundamental_sync.py
-│   │   └── fundamental_analysis.py
+│   │   ├── fundamental_analysis.py
+│   │   ├── daily_report.py
+│   │   └── daily_pipeline.py
 │   ├── fundamentals/       基本面数据模型与配置
 │   ├── analysis/           与数据源无关的分层分析核心
 │   │   ├── contracts.py    层间标准输入和输出
@@ -46,6 +56,8 @@ a_share_screener/
 ├── data/                 行情库与独立基本面缓存库
 ├── config/               项目配置和版本化分析参数
 ├── output/               JSON、CSV 筛选结果
+├── skills/               OpenClaw项目级研究Skill
+├── scripts/              Ubuntu启动与自动化安装脚本
 ├── tests/                无网络自动化测试
 ├── README.md             使用说明
 └── requirements.txt      Python 依赖
@@ -557,6 +569,45 @@ bash scripts/openclaw_research.sh --resume
 证据等级、截止日期、行业/预期/风险评分规则填写逐股JSON，并在每只完成后立即
 调用Python校验。完整安装、参数和 `screen` 后台运行说明见
 [OpenClaw Layer3研究接入](OPENCLAW.md)。
+
+## 每日完整流水线与自动执行
+
+需要把技术筛选、按需基本面、Layer3研究和报告连成一次运行时，执行：
+
+```bash
+bash scripts/daily_pipeline.sh --resume
+```
+
+`--resume`会读取 `output/pipeline_state.json`，已经成功的阶段不会重复执行。每个
+运行目录也保存 `fundamental/pipeline_state.json`，便于审计该快照具体完成到了
+哪一步。若OpenClaw失败，流水线仍会尽量生成部分报告；修复模型或网络后再次运行
+同一命令即可继续。
+
+最终报告保存为：
+
+```text
+output/runs/<运行编号>/fundamental/daily_report.json
+output/runs/<运行编号>/fundamental/daily_report.md
+```
+
+报告把 `complete`、`rejected`、`partial`、`failed` 和 `pending` 分开统计；缺失研究
+不会被当成零分，也不会生成虚假结论。只重新生成某个历史快照的报告可以执行：
+
+```bash
+python -m app.cli.report --run-id <运行编号> --top-n 10
+```
+
+OpenClaw定时任务安装脚本默认仅预览。确认服务器上的项目绝对路径和执行时间后，
+再显式应用：
+
+```bash
+bash scripts/install_openclaw_automation.sh
+bash scripts/install_openclaw_automation.sh --apply
+```
+
+默认在 `Asia/Shanghai` 时区的工作日18:00启动，最长运行6小时。同名任务存在时
+脚本会停止，避免重复调度。完整命令参数、断点语义、休市日行为和验收方法见
+[每日自动流水线](AUTOMATION.md)。
 
 ## 常用维护命令
 

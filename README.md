@@ -95,19 +95,37 @@ bash scripts/openclaw_research.sh --code 603505
 bash scripts/openclaw_research.sh --resume
 ```
 
+执行包含行情、筛选、基本面、OpenClaw和报告的完整每日流水线：
+
+```bash
+bash scripts/daily_pipeline.sh --resume
+```
+
+默认工作日18:00自动执行的OpenClaw任务可先预览、再创建：
+
+```bash
+bash scripts/install_openclaw_automation.sh
+bash scripts/install_openclaw_automation.sh --apply
+```
+
 旧命令 `app/update_market.py`、`app/screener_v1_2.py` 和 `app/run_daily.py`
 仍然可用，但新部署建议使用上面的模块化入口。
 
 ## 文档
 
+- [完整部署教程](docs/DEPLOYMENT.md)
+- [命令行与配置参数手册](docs/PARAMETERS.md)
 - [完整使用手册](docs/USER_GUIDE.md)
 - [Windows安装与运行](docs/WINDOWS.md)
 - [Ubuntu服务器安装与后台运行](docs/UBUNTU.md)
 - [数据源选择与复权方式](docs/DATA_SOURCES.md)
 - [项目架构](docs/ARCHITECTURE.md)
 - [分层分析引擎](docs/ANALYSIS_ENGINE.md)
+- [技术分析公式汇总](docs/TECHNICAL_FORMULAS.md)
+- [基本面分析公式汇总](docs/FUNDAMENTAL_FORMULAS.md)
 - [Layer3研究结果契约](docs/FUNDAMENTAL_RESEARCH.md)
 - [OpenClaw Layer3研究接入](docs/OPENCLAW.md)
+- [每日自动流水线](docs/AUTOMATION.md)
 - [常见故障排查](docs/TROUBLESHOOTING.md)
 - [开发与测试](docs/DEVELOPMENT.md)
 
@@ -137,6 +155,10 @@ runs/<运行编号>/fundamental/research/results/<股票代码>.json
 runs/<运行编号>/fundamental/research/execution_summary.json
 runs/<运行编号>/fundamental/research_results.json
 runs/<运行编号>/fundamental/layer3.json
+runs/<运行编号>/fundamental/daily_report.json
+runs/<运行编号>/fundamental/daily_report.md
+runs/<运行编号>/fundamental/pipeline_state.json
+pipeline_state.json
 ```
 
 本项目输出的是技术条件筛选结果，不构成投资建议。实盘使用前应自行回测并评估

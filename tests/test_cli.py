@@ -64,6 +64,17 @@ class CliCompatibilityTests(unittest.TestCase):
         self.assertIn("--fundamental-db", result.stdout)
         self.assertIn("--run-id", result.stdout)
 
+    def test_daily_pipeline_and_report_entries(self) -> None:
+        pipeline = self.run_help("-m", "app.cli.pipeline")
+        self.assertEqual(pipeline.returncode, 0, pipeline.stderr)
+        self.assertIn("--resume", pipeline.stdout)
+        self.assertIn("--skip-research", pipeline.stdout)
+
+        report = self.run_help("-m", "app.cli.report")
+        self.assertEqual(report.returncode, 0, report.stderr)
+        self.assertIn("--run-id", report.stdout)
+        self.assertIn("--top-n", report.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

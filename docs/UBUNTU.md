@@ -1,5 +1,8 @@
 # Ubuntu服务器安装与后台运行
 
+从空服务器开始的完整流程、分层验收、备份与定时任务见
+[部署教程](DEPLOYMENT.md)。本文保留Ubuntu常用命令速查。
+
 ## 创建环境
 
 ```bash
@@ -27,6 +30,21 @@ python -m app.cli.update --status
 python -m app.cli.screen --all
 python -m app.cli.daily
 ```
+
+需要进一步执行基本面、OpenClaw研究并生成最终报告时，使用完整流水线：
+
+```bash
+bash scripts/daily_pipeline.sh --resume
+```
+
+创建工作日18:00自动运行任务前先预览，再应用：
+
+```bash
+bash scripts/install_openclaw_automation.sh
+bash scripts/install_openclaw_automation.sh --apply
+```
+
+完整说明见 [每日自动流水线](AUTOMATION.md)。
 
 ## 使用screen后台运行
 

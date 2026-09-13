@@ -31,6 +31,8 @@ python -m compileall -q app tests
 - Layer3研究输入指纹、证据截止日、结构化结果校验、风险否决和待研究状态；
 - Layer3逐股工作项、文件提供者、断点复用、失败隔离和只读校验；
 - OpenClaw Skill frontmatter、相对路径、参考文件和不可越权边界；
+- 每日流水线阶段状态、失败续跑、同交易日去重和最终报告完整性；
+- 部署、参数和公式手册存在性及TOML参数覆盖；
 - 全市场百分位与小样本模式；
 - SQLite质量检查；
 - 从数据库到输出文件的完整筛选链路；
@@ -38,3 +40,7 @@ python -m compileall -q app tests
 
 提交代码前应确保以上两条命令成功。网络接口变动需要单独人工验证，避免CI消耗
 额度或因外部服务波动产生误报。
+
+修改分析公式或默认值时，必须同时更新 [参数手册](PARAMETERS.md)、
+[技术分析公式](TECHNICAL_FORMULAS.md) 或
+[基本面分析公式](FUNDAMENTAL_FORMULAS.md)，并更换对应TOML的 `version`。
