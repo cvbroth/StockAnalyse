@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -99,14 +98,16 @@ def analyze_financial_observations(
     latest_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     periods: set[str] = set()
     for raw in observations:
-        if isinstance(raw, Mapping):
-            item = dict(raw)
-        elif callable(getattr(raw, "to_record", None)):
+        if callable(getattr(raw, "to_record", None)):
             item = dict(raw.to_record())
         else:
-            raise TypeError(
-                "observation 必须是映射或提供 to_record() 的标准观测对象"
-            )
+            try:
+                # sqlite3.Row 支持 dict(row)，但没有注册为 Mapping。
+                item = dict(raw)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "observation 必须可转换为字典或提供 to_record()"
+                ) from exc
         metric = str(item.get("metric", ""))
         period = str(item.get("period_end", ""))
         value = _finite(item.get("value"))

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 import pandas as pd
 
@@ -9,6 +11,11 @@ from app.fundamentals import FundamentalFetchRequest, FundamentalObservation
 from app.providers.fundamentals import (
     AkshareThsFundamentalProvider,
     normalize_akshare_ths_financials,
+)
+from app.storage.fundamentals_sqlite import (
+    connect_fundamental_database,
+    load_observations,
+    upsert_observations,
 )
 
 
@@ -231,6 +238,31 @@ class FinancialQuantTests(unittest.TestCase):
         self.assertGreater(result.earnings_momentum_score or 0.0, 0.0)
         self.assertLess(result.data_coverage, 0.50)
         self.assertIsNone(result.business_quality_score)
+
+    def test_analyzer_accepts_sqlite_row_from_real_storage_boundary(self) -> None:
+        observation = self.observation(
+            "revenue_single_quarter_yoy",
+            "2025-06-30",
+            0.20,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            connection = connect_fundamental_database(
+                Path(directory) / "fundamentals.db"
+            )
+            try:
+                upsert_observations(connection, [observation])
+                connection.commit()
+                rows = load_observations(
+                    connection,
+                    "603505",
+                    "2025-06-30",
+                )
+                self.assertEqual(type(rows[0]).__name__, "Row")
+                result = analyze_financial_observations(rows)
+            finally:
+                connection.close()
+        self.assertEqual(result.quarters_available, 1)
+        self.assertIsNotNone(result.earnings_momentum_score)
 
 
 if __name__ == "__main__":
