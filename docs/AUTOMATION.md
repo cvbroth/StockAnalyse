@@ -42,7 +42,7 @@ bash scripts/daily_pipeline.sh
 1. `app.cli.daily`：更新当前数据库并执行完整全市场扫描。
 2. `app.cli.fundamentals`：为最新运行同步Top 30财务数据并量化。
 3. `a-share-fundamental`：逐股研究Top 10并写入经过验证的结果。
-4. `app.cli.report`：生成最终JSON和Markdown报告。
+4. `app.cli.report`：生成最终日报、QQ短报并刷新当周周报。
 
 ## 断点续跑
 
@@ -97,6 +97,21 @@ python -m app.cli.report \
 output/runs/<运行编号>/fundamental/
 ├── daily_report.json
 └── daily_report.md
+```
+
+同时更新面向用户与频道发布的统一目录：
+
+```text
+output/reports/
+├── daily/<YYYYMMDD>/
+├── weekly/<YYYY-Www>/
+└── latest/
+```
+
+只生成指定周报：
+
+```bash
+python -m app.cli.report_weekly --week 2026-W37
 ```
 
 报告状态为 `partial` 时不会伪造缺失分数，会单独列出待研究、部分和失败股票。
@@ -179,3 +194,25 @@ openclaw automations run <任务ID> --wait --wait-timeout 6h
 
 判断研究是否完整应查看 `daily_report.json` 的 `metadata.status`，不能只看进程返回
 值。流水线成功表示执行过程完成，不代表每只股票都有充分证据。
+
+## Docker OpenClaw推送QQ
+
+宿主机先用systemd定时运行完整流水线：
+
+```bash
+bash scripts/install_host_pipeline_timer.sh
+bash scripts/install_host_pipeline_timer.sh --apply
+```
+
+`install_openclaw_automation.sh` 创建的是完整研究流水线任务，而且使用
+`--no-deliver`，不会向频道发送报告。Docker版OpenClaw的日报和周报推送使用独立
+安装器，默认同样只预览：
+
+```bash
+bash scripts/install_report_automations.sh \
+  --compose-dir /home/chen/openclaw \
+  --qq-target '<QQ接收目标>'
+```
+
+确认只读挂载和目标后追加 `--apply`。完整说明见
+[日报、周报与频道发布](REPORTING.md)。

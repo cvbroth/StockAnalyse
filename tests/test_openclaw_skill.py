@@ -81,6 +81,29 @@ class OpenClawSkillTests(unittest.TestCase):
         self.assertNotIn("eval ", installer)
         self.assertNotIn("/home/chen", daily + installer)
 
+    def test_report_automation_is_docker_aware_and_safe_by_default(self) -> None:
+        installer = (
+            PROJECT_DIRECTORY / "scripts" / "install_report_automations.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("apply=false", installer)
+        self.assertIn("docker compose", installer)
+        self.assertIn("--announce", installer)
+        self.assertIn("--channel qqbot", installer)
+        self.assertIn("/reports/print-latest.sh", installer)
+        self.assertNotIn("eval ", installer)
+
+    def test_host_pipeline_timer_is_safe_by_default(self) -> None:
+        installer = (
+            PROJECT_DIRECTORY / "scripts" / "install_host_pipeline_timer.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("apply=false", installer)
+        self.assertIn("systemctl --user", installer)
+        self.assertIn("daily_pipeline.sh", installer)
+        self.assertIn("--resume", installer)
+        self.assertIn("Asia/Shanghai", installer)
+        self.assertNotIn("sudo ", installer)
+        self.assertNotIn("/home/chen", installer)
+
 
 if __name__ == "__main__":
     unittest.main()

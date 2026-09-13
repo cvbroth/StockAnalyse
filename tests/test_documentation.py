@@ -9,6 +9,7 @@ from app.cli.evaluate import build_parser as evaluate_parser
 from app.cli.fundamentals import build_parser as fundamentals_parser
 from app.cli.pipeline import build_parser as pipeline_parser
 from app.cli.report import build_parser as report_parser
+from app.cli.report_weekly import build_parser as weekly_report_parser
 from app.cli.research import build_parser as research_parser
 from app.services.market_update import build_parser as update_parser
 from app.services.screening import build_parser as screen_parser
@@ -25,6 +26,7 @@ class DocumentationTests(unittest.TestCase):
             "PARAMETERS.md",
             "TECHNICAL_FORMULAS.md",
             "FUNDAMENTAL_FORMULAS.md",
+            "REPORTING.md",
         )
         readme = (PROJECT_DIRECTORY / "README.md").read_text(encoding="utf-8")
         for filename in filenames:
@@ -55,6 +57,7 @@ class DocumentationTests(unittest.TestCase):
             fundamentals_parser(),
             research_parser(),
             report_parser(),
+            weekly_report_parser(),
             pipeline_parser(),
             evaluate_parser(),
         )

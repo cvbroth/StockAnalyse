@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .fundamental_sync import write_json_atomic
+from .report_publication import (
+    output_directory_from_run,
+    write_publication_bundle,
+    write_text_atomic,
+)
 
 
-REPORT_SCHEMA_VERSION = "daily-research-report-v1"
+REPORT_SCHEMA_VERSION = "daily-research-report-v2"
 
 
 def _read_json(path: Path, label: str) -> dict[str, Any]:
@@ -47,20 +50,11 @@ def _number(value: Any, digits: int = 1) -> str:
         return "—"
 
 
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
-    )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(content.rstrip())
-            handle.write("\n")
-        os.replace(temporary, path)
-    except Exception:
-        temporary.unlink(missing_ok=True)
-        raise
+def _short_text(value: Any, limit: int) -> str:
+    text = _text(value)
+    if len(text) <= limit:
+        return text
+    return text[: max(1, limit - 1)].rstrip() + "…"
 
 
 def _render_markdown(report: dict[str, Any], top_n: int) -> str:
@@ -72,6 +66,13 @@ def _render_markdown(report: dict[str, Any], top_n: int) -> str:
         f"- 运行编号：`{_text(metadata['run_id'])}`",
         f"- 数据截止：{_text(metadata['as_of_date'])}",
         f"- 报告状态：`{_text(metadata['status'])}`",
+        f"- 市场范围：{_text(metadata.get('market_scope'))}",
+        f"- 有效分析：{metadata['market_counts']['successful']}只",
+        (
+            "- 技术分层："
+            f"5/5共{metadata['market_counts']['confirmed_5of5']}只，"
+            f"4/5共{metadata['market_counts']['watchlist_4of5']}只"
+        ),
         f"- Layer2候选：{metadata['layer2_count']}只",
         (
             "- Layer3状态："
@@ -186,6 +187,57 @@ def _render_markdown(report: dict[str, Any], top_n: int) -> str:
     return "\n".join(lines)
 
 
+def _render_qq(report: dict[str, Any], top_n: int = 5) -> str:
+    metadata = report["metadata"]
+    market = metadata["market_counts"]
+    layer3 = metadata["layer3_counts"]
+    status_label = "完整" if metadata["status"] == "complete" else "部分完成"
+    lines = [
+        f"【A股上升周期日报｜{metadata['as_of_date']}】",
+        "",
+        f"状态：{status_label}",
+        (
+            f"市场扫描：有效{market['successful']}只｜"
+            f"5/5 {market['confirmed_5of5']}只｜"
+            f"4/5 {market['watchlist_4of5']}只"
+        ),
+        (
+            f"Layer2候选：{metadata['layer2_count']}只｜"
+            f"Layer3完成{layer3['complete']}、否决{layer3['rejected']}、"
+            f"待完善{layer3['partial'] + layer3['failed'] + layer3['pending']}"
+        ),
+    ]
+    transitions = metadata.get("transition_counts") or {}
+    lines.extend(
+        [
+            (
+                f"今日变化：新进入5/5 {transitions.get('newly_5of5', 0)}只｜"
+                f"退回4/5 {transitions.get('downgraded_to_4of5', 0)}只"
+            ),
+            "",
+            "重点候选：",
+        ]
+    )
+    ranked = [item for item in report["records"] if item.get("rank") is not None]
+    if not ranked:
+        lines.append("暂无完成排名的Layer3候选。")
+    for item in ranked[:top_n]:
+        research = item.get("research") or {}
+        lines.append(
+            f"{item['rank']}. {item.get('code')} {item.get('name')}｜"
+            f"{_number(item.get('final_score'))}分｜"
+            f"{_text(item.get('focus_status'))}"
+        )
+        why_now = _short_text(research.get("why_now"), 160)
+        if why_now != "—":
+            lines.append(f"   现在关注：{why_now}")
+        risks = item.get("risks") or []
+        if risks:
+            lines.append(f"   风险：{_short_text(risks[0], 100)}")
+    lines.extend(["", "本报告为规则化研究结果，不构成投资建议。"])
+    return "\n".join(lines)
+
+
 def generate_daily_report(
     run_directory: Path,
     top_n: int = 10,
@@ -195,11 +247,13 @@ def generate_daily_report(
     run_directory = run_directory.expanduser().resolve()
     manifest = _read_json(run_directory / "manifest.json", "运行清单")
     layer2 = _read_json(run_directory / "layer2.json", "Layer2结果")
+    layer1 = _read_json(run_directory / "layer1.json", "Layer1结果")
     layer3 = _read_json(
         run_directory / "fundamental" / "layer3.json",
         "Layer3结果",
     )
     layer2_records = _records(layer2, "Layer2结果")
+    layer1_records = _records(layer1, "Layer1结果")
     layer3_records = _records(layer3, "Layer3结果")
     run_id = str(manifest.get("run_id", ""))
     as_of_date = str(manifest.get("end_date", ""))
@@ -233,6 +287,24 @@ def generate_daily_report(
             "as_of_date": as_of_date,
             "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
             "status": report_status,
+            "market_scope": manifest.get("market_scope"),
+            "data_provider": manifest.get("database_provider"),
+            "market_counts": {
+                "requested": int(manifest.get("requested_count", len(layer1_records))),
+                "successful": int(manifest.get("successful_count", len(layer1_records))),
+                "errors": int(manifest.get("error_count", 0)),
+                "confirmed_5of5": sum(
+                    bool(item.get("base_filters", {}).get("passed"))
+                    and int(item.get("technical_score", 0)) == 5
+                    for item in layer1_records
+                ),
+                "watchlist_4of5": sum(
+                    bool(item.get("base_filters", {}).get("passed"))
+                    and int(item.get("technical_score", 0)) == 4
+                    for item in layer1_records
+                ),
+            },
+            "transition_counts": manifest.get("transition_counts", {}),
             "layer2_count": len(layer2_records),
             "layer3_count": len(layer3_records),
             "layer3_counts": counts,
@@ -244,5 +316,15 @@ def generate_daily_report(
     json_path = fundamental_directory / "daily_report.json"
     markdown_path = fundamental_directory / "daily_report.md"
     write_json_atomic(json_path, report)
-    _write_text_atomic(markdown_path, _render_markdown(report, top_n))
+    markdown = _render_markdown(report, top_n)
+    qq_text = _render_qq(report)
+    write_text_atomic(markdown_path, markdown)
+    write_publication_bundle(
+        output_directory_from_run(run_directory),
+        "daily",
+        as_of_date,
+        report,
+        markdown,
+        qq_text,
+    )
     return json_path, markdown_path, report

@@ -199,6 +199,16 @@ python -m app.cli.screen --from-layer 2 \
 | `--output-dir PATH` | 项目配置 | 输出目录 |
 | `--top-n N` | 10 | Markdown最多展示的候选状态卡；至少1 |
 
+该命令在生成日报后自动刷新日报所在周的周汇总。
+
+### 周报 `app.cli.report_weekly`
+
+| 参数 | 默认值 | 含义 |
+|---|---:|---|
+| `--week YYYY-Www` | 最近日报所在周 | 指定ISO自然周，例如 `2026-W37` |
+| `--output-dir PATH` | 项目配置 | 包含 `runs/` 和 `reports/` 的输出目录 |
+| `--top-n N` | 10 | 周报最多展示的周末候选；至少1 |
+
 ### 完整流水线 `app.cli.pipeline`
 
 | 参数 | 默认值 | 含义 |

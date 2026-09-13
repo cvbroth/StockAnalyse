@@ -26,6 +26,8 @@ Layer3研究任务另外经过 `app.research`。这一层只编排外部结构�
 - `scripts/openclaw_research.sh`：Ubuntu无固定项目路径的OpenClaw启动器。
 - `app.services.daily_pipeline`：跨阶段状态机、失败恢复和同交易日去重。
 - `app.services.daily_report`：把技术与Layer3结果汇总为稳定JSON和可读Markdown。
+- `app.services.weekly_report`：从不可变日报聚合候选持续性和周内排名变化。
+- `app.services.report_publication`：归档日报/周报、生成QQ短报与最新版只读出口。
 - `scripts/daily_pipeline.sh`：完整流水线的项目相对路径启动器。
 - `scripts/install_openclaw_automation.sh`：OpenClaw定时任务预览与显式安装器。
 - `app/analysis/`：不访问网络和数据库的纯分析逻辑。
@@ -126,8 +128,11 @@ app.cli.pipeline
    ├── app.cli.daily          行情更新 + Layer1/2全市场运行
    ├── app.cli.fundamentals   稀疏财务同步 + 财务量化
    ├── OpenClaw Skill         Layer3证据研究
-   └── app.cli.report         JSON + Markdown报告
+   └── app.cli.report         日报 + QQ短报 + 当周汇总
 ```
+
+报告事实由Python从快照确定性生成。Docker OpenClaw只读挂载 `output/reports`，定时
+输出已经生成的短报并交给频道插件；它不重新计算分数，也不访问两个SQLite数据库。
 
 编排器不把四个阶段揉进同一模块，而是以子进程调用稳定CLI边界。阶段命令、返回码、
 起止时间和状态原子写入 `output/pipeline_state.json`；运行快照内保存副本。研究失败

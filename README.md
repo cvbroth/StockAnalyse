@@ -101,6 +101,23 @@ bash scripts/openclaw_research.sh --resume
 bash scripts/daily_pipeline.sh --resume
 ```
 
+完整流水线会同时生成可读日报、QQ短报和当周汇总。也可以单独重建：
+
+```bash
+python -m app.cli.report
+python -m app.cli.report_weekly --week 2026-W37
+```
+
+统一报告中心位于 `output/reports/`。Docker版OpenClaw定时推送QQ的只读挂载、
+预览和安装步骤见[日报、周报与频道发布](docs/REPORTING.md)。
+
+Ubuntu宿主机每日生成报告的systemd定时器也默认只预览：
+
+```bash
+bash scripts/install_host_pipeline_timer.sh
+bash scripts/install_host_pipeline_timer.sh --apply
+```
+
 默认工作日18:00自动执行的OpenClaw任务可先预览、再创建：
 
 ```bash
@@ -126,6 +143,7 @@ bash scripts/install_openclaw_automation.sh --apply
 - [Layer3研究结果契约](docs/FUNDAMENTAL_RESEARCH.md)
 - [OpenClaw Layer3研究接入](docs/OPENCLAW.md)
 - [每日自动流水线](docs/AUTOMATION.md)
+- [日报、周报与频道发布](docs/REPORTING.md)
 - [常见故障排查](docs/TROUBLESHOOTING.md)
 - [开发与测试](docs/DEVELOPMENT.md)
 
@@ -158,6 +176,14 @@ runs/<运行编号>/fundamental/layer3.json
 runs/<运行编号>/fundamental/daily_report.json
 runs/<运行编号>/fundamental/daily_report.md
 runs/<运行编号>/fundamental/pipeline_state.json
+reports/daily/<YYYYMMDD>/report.json
+reports/daily/<YYYYMMDD>/report.md
+reports/daily/<YYYYMMDD>/qq.txt
+reports/weekly/<YYYY-Www>/report.json
+reports/weekly/<YYYY-Www>/report.md
+reports/weekly/<YYYY-Www>/qq.txt
+reports/latest/daily-qq.txt
+reports/latest/weekly-qq.txt
 pipeline_state.json
 ```
 

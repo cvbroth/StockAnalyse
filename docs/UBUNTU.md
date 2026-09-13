@@ -37,7 +37,7 @@ python -m app.cli.daily
 bash scripts/daily_pipeline.sh --resume
 ```
 
-创建工作日18:00自动运行任务前先预览，再应用：
+OpenClaw直接安装在宿主机时，创建工作日18:00自动运行任务前先预览，再应用：
 
 ```bash
 bash scripts/install_openclaw_automation.sh
@@ -45,6 +45,24 @@ bash scripts/install_openclaw_automation.sh --apply
 ```
 
 完整说明见 [每日自动流水线](AUTOMATION.md)。
+
+OpenClaw通过Docker部署时，由systemd用户定时器运行宿主机Python流水线：
+
+```bash
+bash scripts/install_host_pipeline_timer.sh
+bash scripts/install_host_pipeline_timer.sh --apply
+```
+
+报告会写入 `output/reports/`。把该目录只读挂载到OpenClaw容器的 `/reports` 后，
+预览或创建QQ日报、周报推送任务：
+
+```bash
+bash scripts/install_report_automations.sh \
+  --compose-dir /home/chen/openclaw \
+  --qq-target '<QQ接收目标>'
+```
+
+完整步骤见 [日报、周报与频道发布](REPORTING.md)。
 
 ## 使用screen后台运行
 

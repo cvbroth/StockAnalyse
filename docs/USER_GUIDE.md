@@ -590,6 +590,13 @@ output/runs/<运行编号>/fundamental/daily_report.json
 output/runs/<运行编号>/fundamental/daily_report.md
 ```
 
+同时归档到 `output/reports/daily/`，并刷新 `output/reports/latest/` 和当周周报。
+单独生成指定周报：
+
+```bash
+python -m app.cli.report_weekly --week 2026-W37 --top-n 10
+```
+
 报告把 `complete`、`rejected`、`partial`、`failed` 和 `pending` 分开统计；缺失研究
 不会被当成零分，也不会生成虚假结论。只重新生成某个历史快照的报告可以执行：
 
@@ -597,8 +604,7 @@ output/runs/<运行编号>/fundamental/daily_report.md
 python -m app.cli.report --run-id <运行编号> --top-n 10
 ```
 
-OpenClaw定时任务安装脚本默认仅预览。确认服务器上的项目绝对路径和执行时间后，
-再显式应用：
+宿主机安装OpenClaw时，原定时任务安装脚本默认仅预览：
 
 ```bash
 bash scripts/install_openclaw_automation.sh
@@ -608,6 +614,18 @@ bash scripts/install_openclaw_automation.sh --apply
 默认在 `Asia/Shanghai` 时区的工作日18:00启动，最长运行6小时。同名任务存在时
 脚本会停止，避免重复调度。完整命令参数、断点语义、休市日行为和验收方法见
 [每日自动流水线](AUTOMATION.md)。
+
+OpenClaw使用Docker时，应由systemd在宿主机生成报告，再由OpenClaw只读读取并推送：
+
+```bash
+bash scripts/install_host_pipeline_timer.sh
+bash scripts/install_report_automations.sh \
+  --compose-dir /home/chen/openclaw \
+  --qq-target '<QQ接收目标>'
+```
+
+两条命令默认只预览。具体挂载、应用和验收见
+[日报、周报与频道发布](REPORTING.md)。
 
 ## 常用维护命令
 

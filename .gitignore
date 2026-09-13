@@ -12,6 +12,7 @@ data/*.db-wal
 output/*.json
 output/*.csv
 output/runs/
+output/reports/
 
 # 本地密钥配置
 .env

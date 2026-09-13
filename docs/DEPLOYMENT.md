@@ -249,7 +249,7 @@ bash scripts/daily_pipeline.sh --resume
 完整流水线依次执行：
 
 ```text
-行情更新与全市场筛选 → 基本面同步 → OpenClaw研究 → JSON/Markdown报告
+行情更新与全市场筛选 → 基本面同步 → OpenClaw研究 → 日报 → 当周汇总
 ```
 
 状态保存在 `output/pipeline_state.json`。网络或模型失败后再次执行 `--resume`，
@@ -260,6 +260,21 @@ bash scripts/daily_pipeline.sh --resume
 ```text
 output/runs/<运行编号>/fundamental/daily_report.json
 output/runs/<运行编号>/fundamental/daily_report.md
+```
+
+面向用户、周报和频道推送的统一报告中心：
+
+```text
+output/reports/daily/<YYYYMMDD>/
+output/reports/weekly/<YYYY-Www>/
+output/reports/latest/
+```
+
+只生成报告，不重新运行分析：
+
+```bash
+python -m app.cli.report
+python -m app.cli.report_weekly --week 2026-W37
 ```
 
 ## 7. 后台运行
@@ -285,7 +300,29 @@ screen -d -r stock-pipeline
 screen -ls
 ```
 
-## 8. OpenClaw定时任务
+## 8. 定时生成和推送报告
+
+Docker部署的OpenClaw不能直接执行宿主机 `.venv`。推荐由systemd用户定时器运行
+宿主机流水线：
+
+```bash
+bash scripts/install_host_pipeline_timer.sh
+bash scripts/install_host_pipeline_timer.sh --apply
+```
+
+报告生成后，OpenClaw Docker只读挂载 `output/reports`，再创建QQ日报和周报推送
+任务：
+
+```bash
+bash scripts/install_report_automations.sh \
+  --compose-dir /home/chen/openclaw \
+  --qq-target '<QQ接收目标>'
+```
+
+两个安装器默认都只预览。完整只读挂载、QQBot预检和显式应用步骤见
+[日报、周报与频道发布](REPORTING.md)。
+
+### 宿主机安装OpenClaw的旧模式
 
 确认手工完整流水线成功后，先预览任务：
 
@@ -301,6 +338,8 @@ bash scripts/install_openclaw_automation.sh --apply
 
 默认工作日18:00按 `Asia/Shanghai` 精确触发，最长运行6小时，不向聊天频道投递，
 运行记录仍保存在OpenClaw和项目输出中。同名任务已存在时脚本会停止。
+
+Docker部署不要使用这个旧安装器来启动宿主机Python流水线。
 
 检查和手工触发：
 

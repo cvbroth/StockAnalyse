@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.services.daily_pipeline import DailyPipeline
 from app.services.daily_report import generate_daily_report
+from app.cli.report import main as report_main
 
 
 RUN_ID = "20260911-pipeline"
@@ -90,6 +91,23 @@ def prepare_run(output_directory: Path, status: str = "complete") -> Path:
 
 
 class DailyReportTests(unittest.TestCase):
+    def test_report_cli_generates_daily_and_weekly_centers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            prepare_run(output)
+
+            code = report_main(
+                ["--run-id", RUN_ID, "--output-dir", str(output)]
+            )
+
+            self.assertEqual(code, 0)
+            self.assertTrue(
+                (output / "reports" / "daily" / "20260911" / "report.json").is_file()
+            )
+            self.assertTrue(
+                (output / "reports" / "weekly" / "2026-W37" / "report.json").is_file()
+            )
+
     def test_generates_complete_json_and_markdown_report(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             run_directory = prepare_run(Path(directory) / "output")
@@ -101,7 +119,15 @@ class DailyReportTests(unittest.TestCase):
             markdown = markdown_path.read_text(encoding="utf-8")
             self.assertIn("A股上升周期每日研究报告", markdown)
             self.assertIn("603505", markdown)
+            self.assertIn("76.2", markdown)
             self.assertIn("不构成投资建议", markdown)
+            output = run_directory.parents[1]
+            self.assertTrue(
+                (output / "reports" / "daily" / "20260911" / "report.md").is_file()
+            )
+            self.assertTrue(
+                (output / "reports" / "latest" / "daily-qq.txt").is_file()
+            )
 
     def test_pending_research_produces_partial_report_without_fake_score(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

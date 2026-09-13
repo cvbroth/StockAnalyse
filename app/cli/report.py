@@ -6,14 +6,26 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from ..analysis.history import load_latest_full_market
 from ..project_config import resolve_output_path
 from ..services.daily_report import generate_daily_report
+from ..services.weekly_report import generate_weekly_report
 
 
 RUN_ID_PATTERN = re.compile(r"^[0-9A-Za-z._-]+$")
+
+
+def _report_week(as_of_date: str) -> str:
+    for pattern in ("%Y%m%d", "%Y-%m-%d"):
+        try:
+            value = datetime.strptime(as_of_date, pattern).date().isocalendar()
+            return f"{value.year}-W{value.week:02d}"
+        except ValueError:
+            continue
+    raise RuntimeError(f"日报数据截止日期格式无效：{as_of_date!r}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,6 +69,13 @@ def main(argv: list[str] | None = None) -> int:
             output_dir / "runs" / str(run_id),
             top_n=args.top_n,
         )
+        weekly_json_path, weekly_markdown_path, weekly_report = (
+            generate_weekly_report(
+                output_dir,
+                week=_report_week(str(report["metadata"]["as_of_date"])),
+                top_n=args.top_n,
+            )
+        )
     except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
         print(f"研究报告生成失败：{exc}", file=sys.stderr)
         return 2
@@ -71,6 +90,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"JSON报告：{json_path}")
     print(f"Markdown报告：{markdown_path}")
+    print(
+        f"当周汇总：{weekly_report['metadata']['week_id']} "
+        f"（{weekly_report['metadata']['trading_days']}个交易日）"
+    )
+    print(f"JSON周报：{weekly_json_path}")
+    print(f"Markdown周报：{weekly_markdown_path}")
+    print(f"统一报告中心：{output_dir / 'reports'}")
     return 0
 
 
