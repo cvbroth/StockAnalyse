@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-from ..analysis.fundamentals import FUNDAMENTAL_RESEARCH_SCHEMA_VERSION
+from ..analysis.fundamentals import (
+    FUNDAMENTAL_RESEARCH_SCHEMA_VERSION,
+    FUNDAMENTAL_RESEARCH_SCHEMA_VERSIONS,
+)
 from ..fundamentals.models import normalize_date
 from ..services.fundamental_sync import write_json_atomic
 
@@ -31,7 +34,7 @@ def load_research_request(
     records = payload.get("records")
     if not isinstance(metadata, dict) or not isinstance(records, list):
         raise RuntimeError("研究请求必须包含 metadata 对象和 records 数组")
-    if metadata.get("schema_version") != FUNDAMENTAL_RESEARCH_SCHEMA_VERSION:
+    if metadata.get("schema_version") not in FUNDAMENTAL_RESEARCH_SCHEMA_VERSIONS:
         raise RuntimeError("研究请求 schema_version 不兼容")
     run_id = str(metadata.get("run_id", ""))
     if not run_id:
@@ -43,6 +46,7 @@ def load_research_request(
     if metadata.get("record_count") != len(records):
         raise RuntimeError("研究请求 record_count 与实际记录数不一致")
     codes: set[str] = set()
+    request_schema = str(metadata.get("schema_version"))
     for raw in records:
         if not isinstance(raw, dict):
             raise RuntimeError("研究请求 records 的每一项必须是对象")
@@ -60,6 +64,11 @@ def load_research_request(
             character not in "0123456789abcdef" for character in input_hash
         ):
             raise RuntimeError(f"{code} 的 input_hash 无效")
+        result_contract = raw.get("result_contract")
+        if not isinstance(result_contract, dict):
+            raise RuntimeError(f"{code} 的研究请求缺少 result_contract")
+        if str(result_contract.get("schema_version", "")) != request_schema:
+            raise RuntimeError(f"{code} 的研究契约版本与请求元数据不一致")
         codes.add(code)
     return {**metadata, "as_of_date": cutoff}, records
 
@@ -115,7 +124,12 @@ class ResearchWorkspace:
                 item_directory / "request.json",
                 {
                     "metadata": {
-                        "schema_version": FUNDAMENTAL_RESEARCH_SCHEMA_VERSION,
+                        "schema_version": (
+                            (request.get("result_contract") or {}).get(
+                                "schema_version"
+                            )
+                            or FUNDAMENTAL_RESEARCH_SCHEMA_VERSION
+                        ),
                         "usage": "只读研究输入；不得修改input_hash或截止日期",
                     },
                     "record": request,
@@ -143,7 +157,10 @@ class ResearchWorkspace:
             self.aggregate_path,
             {
                 "metadata": {
-                    "schema_version": FUNDAMENTAL_RESEARCH_SCHEMA_VERSION,
+                    "schema_version": metadata.get(
+                        "schema_version",
+                        FUNDAMENTAL_RESEARCH_SCHEMA_VERSION,
+                    ),
                     "run_id": metadata["run_id"],
                     "as_of_date": metadata["as_of_date"],
                     "record_count": len(records),

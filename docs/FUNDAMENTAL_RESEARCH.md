@@ -39,9 +39,10 @@ output/runs/<运行编号>/fundamental/
 └── layer3.json
 ```
 
-`research_request.json` 默认包含Layer2前10只股票。模板最初是合法的 `partial`
-结构，但不含研究结论。复制模板为 `research_results.json` 后，研究工具只填写结论
-字段，不能改动 `run_id`、`code`、`as_of_date` 或 `input_hash`。
+`research_request.json` 默认包含Layer2前10只股票。模板是待填写的 `partial` 骨架，
+不含研究结论，且模型和研究时间字段为空，因此不能原样当作已完成结果提交。研究
+工具只填写允许的研究字段，不能改动 `run_id`、`code`、`as_of_date` 或
+`input_hash`。
 
 运行 `python -m app.cli.research` 后，批量任务会拆分为逐股工作项。外部工具只读
 `work_items/<代码>/request.json`，按照同目录模板生成结论并投递到 `inbox`。
@@ -63,7 +64,9 @@ output/runs/<运行编号>/fundamental/
 
 ## 证据要求
 
-每条证据必须包括判断、来源类型、来源名称、来源层级、发布日期、有效期间、可信度，
+v2不再只检查“有没有证据”，而是检查“每个关键结论由哪条证据支持”。每条证据
+必须有唯一 `evidence_id`，并通过 `supports` 映射到评分、摘要、催化、风险或否决项。
+此外还要包括来源类型、名称、标题、层级、发布日期、有效期间、采集时间、可信度，
 以及 `source_url` 或 `document_id` 至少一个。来源层级定义为：
 
 | 层级 | 来源 |
@@ -82,7 +85,7 @@ output/runs/<运行编号>/fundamental/
 
 ```json
 {
-  "schema_version": "fundamental-research-v1",
+  "schema_version": "fundamental-research-v2",
   "run_id": "20260911-153000123456",
   "input_hash": "从模板原样复制的64位SHA-256",
   "code": "603505",
@@ -97,6 +100,14 @@ output/runs/<运行编号>/fundamental/
   },
   "risk_level": "MEDIUM",
   "confidence": 0.82,
+  "research_metadata": {
+    "skill_version": "a-share-fundamental-v2.0",
+    "rubric_version": "layer3-research-rubric-v2.0",
+    "model_provider": "实际模型提供者",
+    "model_name": "实际模型名称",
+    "started_at": "2026-09-11T18:10:00+08:00",
+    "finished_at": "2026-09-11T18:14:00+08:00"
+  },
   "signals": {
     "revenue_accelerating": true,
     "profit_accelerating": true,
@@ -107,18 +118,64 @@ output/runs/<运行编号>/fundamental/
   "catalysts": ["主要产品价格上涨"],
   "risks": ["产品价格回落"],
   "vetoes": [],
+  "quality_flags": [],
   "evidence": [
     {
+      "evidence_id": "E1",
       "claim": "主要产品价格上涨",
       "source_type": "filing",
       "source_name": "公司公告",
+      "source_title": "关于主要产品价格变化的公告",
       "source_tier": 1,
       "published_date": "2026-09-05",
       "effective_period": "最近90天",
       "confidence": 0.9,
+      "retrieved_at": "2026-09-11T18:11:00+08:00",
       "source_url": "https://example.com/notice",
       "document_id": null,
-      "excerpt": "不超过25字的必要证据摘要"
+      "excerpt": "不超过25字的必要证据摘要",
+      "supports": [
+        "industry_cycle_score",
+        "industry_summary",
+        "why_now",
+        "catalysts.0"
+      ]
+    },
+    {
+      "evidence_id": "E2",
+      "claim": "公司提示产品价格回落风险",
+      "source_type": "filing",
+      "source_name": "公司公告",
+      "source_title": "风险提示公告",
+      "source_tier": 1,
+      "published_date": "2026-09-05",
+      "effective_period": "未来3至12个月",
+      "confidence": 0.9,
+      "retrieved_at": "2026-09-11T18:12:00+08:00",
+      "source_url": "https://example.com/risk",
+      "document_id": null,
+      "excerpt": "产品价格存在回落风险",
+      "supports": ["risk_score", "risk_summary", "risks.0"]
+    },
+    {
+      "evidence_id": "E3",
+      "claim": "业绩预告高于此前经营指引",
+      "source_type": "filing",
+      "source_name": "交易所公告",
+      "source_title": "半年度业绩预告",
+      "source_tier": 1,
+      "published_date": "2026-09-08",
+      "effective_period": "未来3至12个月",
+      "confidence": 0.85,
+      "retrieved_at": "2026-09-11T18:13:00+08:00",
+      "source_url": "https://example.com/forecast",
+      "document_id": null,
+      "excerpt": "业绩区间高于此前指引",
+      "supports": [
+        "expectation_delta_score",
+        "expectation_summary",
+        "why_now"
+      ]
     }
   ],
   "why_now": "行业景气和盈利趋势同步改善",
@@ -128,8 +185,15 @@ output/runs/<运行编号>/fundamental/
 }
 ```
 
-`complete` 结果必须给出三项研究分、全部五个布尔信号、至少一项风险、至少一条
-证据和四段摘要。资料不足时应保留 `partial`，不能猜测缺失字段。
+真实 `complete` 结果必须像示意一样覆盖三项研究分、四段摘要和每一项催化、风险、
+否决。资料不足时应保留 `partial`，不能猜测缺失字段。
+
+`quality_flags` 用于显式记录单位不明、低基数增长、并表口径变化、计划尚未完成、
+来源冲突、证据过旧、日期不明或只有二手来源等问题。空数组表示已经检查但未发现，
+不是省略检查。
+
+新建任务使用 v2 契约。程序仍能读取旧运行中的 v1 结果，方便断点续跑；但 v2请求
+只接受v2结果，不能把 `schema_version` 改回v1来绕过新校验。
 
 ## 合并与否决
 

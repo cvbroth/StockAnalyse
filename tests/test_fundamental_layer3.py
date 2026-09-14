@@ -7,6 +7,9 @@ from pathlib import Path
 
 from app.analysis.fundamentals import (
     FUNDAMENTAL_RESEARCH_SCHEMA_VERSION,
+    FUNDAMENTAL_RESEARCH_SCHEMA_VERSION_V1,
+    RESEARCH_RUBRIC_VERSION,
+    RESEARCH_SKILL_VERSION,
     FundamentalEvidence,
     FundamentalResearchResult,
     compose_layer3_result,
@@ -17,6 +20,7 @@ from app.fundamentals import FundamentalScoringConfig
 from app.services.fundamental_research import (
     load_research_results,
     prepare_research_request_file,
+    validate_research_result_record,
     write_layer3_results,
 )
 
@@ -81,12 +85,35 @@ def research_result(
                 effective_period="最近90天",
                 confidence=0.9,
                 source_url="https://example.com/notice",
+                excerpt="产品价格较上期上涨",
+                evidence_id="E1",
+                source_title="测试公司经营情况公告",
+                retrieved_at="2026-09-11T10:00:00+08:00",
+                supports=(
+                    "industry_cycle_score",
+                    "expectation_delta_score",
+                    "risk_score",
+                    "why_now",
+                    "industry_summary",
+                    "expectation_summary",
+                    "risk_summary",
+                    "catalysts.0",
+                    "risks.0",
+                ),
             ),
         ),
         why_now="盈利和行业景气同步改善",
         industry_summary="行业库存下降",
         expectation_summary="盈利预期可能上修",
         risk_summary="主要风险为价格回落",
+        research_metadata={
+            "skill_version": RESEARCH_SKILL_VERSION,
+            "rubric_version": RESEARCH_RUBRIC_VERSION,
+            "model_provider": "test",
+            "model_name": "test-model",
+            "started_at": "2026-09-11T09:55:00+08:00",
+            "finished_at": "2026-09-11T10:05:00+08:00",
+        },
     )
 
 
@@ -130,6 +157,70 @@ class ResearchContractTests(unittest.TestCase):
                 template["records"][0]["input_hash"],
                 requests[0]["input_hash"],
             )
+            self.assertEqual(
+                template["records"][0]["research_metadata"]["rubric_version"],
+                RESEARCH_RUBRIC_VERSION,
+            )
+
+    def test_v2_complete_requires_evidence_mapping(self) -> None:
+        record = research_result().to_record()
+        record["evidence"][0]["supports"] = ["industry_cycle_score"]
+        with self.assertRaisesRegex(ValueError, "缺少证据映射"):
+            FundamentalResearchResult.from_record(record)
+
+    def test_v2_rejects_unknown_quality_flag_evidence(self) -> None:
+        record = research_result().to_record()
+        record["quality_flags"] = [
+            {
+                "code": "source_conflict",
+                "detail": "两个来源口径不一致",
+                "evidence_ids": ["E404"],
+            }
+        ]
+        with self.assertRaisesRegex(ValueError, "未知 evidence_id"):
+            FundamentalResearchResult.from_record(record)
+
+    def test_v2_requires_explicit_quality_flag_check(self) -> None:
+        record = research_result().to_record()
+        record.pop("quality_flags")
+        with self.assertRaisesRegex(ValueError, "quality_flags"):
+            FundamentalResearchResult.from_record(record)
+
+    def test_v1_record_remains_readable(self) -> None:
+        record = research_result().to_record()
+        record["schema_version"] = FUNDAMENTAL_RESEARCH_SCHEMA_VERSION_V1
+        record.pop("research_metadata")
+        record.pop("quality_flags")
+        for evidence in record["evidence"]:
+            for key in ("evidence_id", "source_title", "retrieved_at", "supports"):
+                evidence.pop(key)
+        parsed = FundamentalResearchResult.from_record(record)
+        self.assertEqual(
+            parsed.schema_version,
+            FUNDAMENTAL_RESEARCH_SCHEMA_VERSION_V1,
+        )
+
+    def test_v1_result_cannot_downgrade_a_v2_request(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, _, requests = prepare_research_request_file(
+                [financial_record()],
+                Path(directory),
+                "20260911-test",
+                "20260911",
+                top_n=1,
+                config_version="test",
+            )
+            record = research_result(
+                input_hash=requests[0]["input_hash"]
+            ).to_record()
+            record["schema_version"] = FUNDAMENTAL_RESEARCH_SCHEMA_VERSION_V1
+            with self.assertRaisesRegex(RuntimeError, "契约版本"):
+                validate_research_result_record(
+                    record,
+                    requests,
+                    "20260911-test",
+                    "20260911",
+                )
 
     def test_loader_rejects_result_from_different_input(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -1,4 +1,4 @@
-# Layer3 research scoring rubric
+# Layer3 research scoring rubric v2
 
 The Python engine already owns `earnings_momentum` and `business_quality`.
 Never replace or recalculate them. Research supplies only `industry_cycle`,
@@ -69,3 +69,16 @@ the evidence cannot support true or false.
 
 Confidence measures evidence quality and coverage, not enthusiasm about the
 stock.
+
+## Evidence-to-score calibration
+
+- A precise score is a summary of the mapped evidence, not an independent fact.
+- When evidence only supports a range, choose the midpoint conservatively and
+  explain uncertainty in the matching summary.
+- Scores of 80 or above need current, direct evidence; do not award them from a
+  single promotional statement or an announced-but-unfinished plan.
+- If two credible sources conflict materially, add a `source_conflict` quality
+  flag, lower confidence, and normally return `partial` until the conflict can be
+  resolved.
+- Low-base growth, accounting-scope changes, and unit ambiguity must not be
+  treated as operating acceleration without an explicit adjustment.

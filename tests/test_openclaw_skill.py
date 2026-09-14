@@ -49,6 +49,9 @@ class OpenClawSkillTests(unittest.TestCase):
         self.assertIn("Never invent", content)
         self.assertIn("as_of_date", content)
         self.assertIn("research/inbox/<code>.json", content)
+        self.assertIn("evidence matrix", content)
+        self.assertIn("quality_flags", content)
+        self.assertIn("model provider", content)
         self.assertNotIn("C:\\Users", content)
         self.assertNotIn("/home/chen", content)
 

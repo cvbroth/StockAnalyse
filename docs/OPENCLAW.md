@@ -3,6 +3,10 @@
 本项目把OpenClaw限制为Layer3外部研究员。Python继续负责技术筛选、财务量化、
 结果契约校验、风险否决和排名；OpenClaw只查资料、整理证据并填写逐股JSON。
 
+当前研究契约为v2：每个评分、摘要、催化、风险和否决都必须映射到具体证据，
+并记录模型、Skill、评分规则、研究时间和数据质量异常。旧运行中的v1结果仍可继续
+读取，但新v2任务不接受把结果版本改回v1。
+
 官方参考：
 
 - [创建OpenClaw Skill](https://docs.openclaw.ai/tools/creating-skills)
@@ -50,6 +54,10 @@ openclaw skills install ./skills/a-share-fundamental --as a-share-fundamental
 ```
 
 本项目不自动执行安装，避免覆盖同名Skill。
+
+如果之前把Skill安装到了OpenClaw自己的工作区，项目更新后应按你的OpenClaw版本
+支持的更新/重装方式同步一次；优先让 `agent exec --cwd <项目>` 直接读取项目内Skill，
+可以避免服务器长期使用旧副本。
 
 ## 第一次建议只研究一只
 

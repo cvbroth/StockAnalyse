@@ -7,6 +7,8 @@ from pathlib import Path
 
 from app.analysis.fundamentals import (
     FUNDAMENTAL_RESEARCH_SCHEMA_VERSION,
+    RESEARCH_RUBRIC_VERSION,
+    RESEARCH_SKILL_VERSION,
     FundamentalEvidence,
     FundamentalResearchResult,
 )
@@ -73,6 +75,21 @@ def complete_result(request: dict) -> dict:
                 effective_period="最近90天",
                 confidence=0.9,
                 source_url="https://example.com/notice",
+                excerpt="需求指标较上期改善",
+                evidence_id="E1",
+                source_title="测试公司经营情况公告",
+                retrieved_at="2026-09-11T10:00:00+08:00",
+                supports=(
+                    "industry_cycle_score",
+                    "expectation_delta_score",
+                    "risk_score",
+                    "why_now",
+                    "industry_summary",
+                    "expectation_summary",
+                    "risk_summary",
+                    "catalysts.0",
+                    "risks.0",
+                ),
             ),
         ),
         why_now="盈利趋势与行业需求同时改善",
@@ -80,6 +97,14 @@ def complete_result(request: dict) -> dict:
         expectation_summary="盈利预期可能上修",
         risk_summary="需求回落是主要风险",
         schema_version=FUNDAMENTAL_RESEARCH_SCHEMA_VERSION,
+        research_metadata={
+            "skill_version": RESEARCH_SKILL_VERSION,
+            "rubric_version": RESEARCH_RUBRIC_VERSION,
+            "model_provider": "test",
+            "model_name": "test-model",
+            "started_at": "2026-09-11T09:55:00+08:00",
+            "finished_at": "2026-09-11T10:05:00+08:00",
+        },
     )
     return result.to_record()
 
