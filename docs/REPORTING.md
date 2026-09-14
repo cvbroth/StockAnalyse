@@ -12,6 +12,10 @@ Layer3分数。Python负责确定数字和事实，OpenClaw只负责定时读取
 python -m app.cli.report
 ```
 
+省略 `--run-id` 时，程序选择最近一个已经具备 `fundamental/layer3.json` 的运行，
+而不是盲目使用最新技术扫描。这样同一交易日重复扫描并复用旧报告时，不会误选只有
+Layer1/2、尚未生成Layer3的空下游快照。
+
 这个命令生成指定运行的日报，并刷新该日报所在周的周汇总。单独处理历史快照：
 
 ```bash

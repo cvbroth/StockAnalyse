@@ -377,6 +377,13 @@ class DailyPipelineTests(unittest.TestCase):
                 second_state["stages"]["research"]["status"],
                 "skipped",
             )
+            self.assertFalse(
+                (output / "runs" / next_run_id / "fundamental" / "layer3.json").is_file()
+            )
+            self.assertEqual(
+                report_main(["--output-dir", str(output)]),
+                0,
+            )
 
 
 if __name__ == "__main__":

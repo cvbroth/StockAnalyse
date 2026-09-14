@@ -175,3 +175,48 @@ def load_latest_full_market(
     except (OSError, KeyError, json.JSONDecodeError, RuntimeError) as exc:
         raise RuntimeError(f"最新全市场运行指针损坏：{pointer}：{exc}") from exc
     return run_id, records
+
+
+def find_latest_reportable_run(output_dir: Path) -> str | None:
+    """查找最近一个具备完整Layer1/2和Layer3输入的运行快照。
+
+    最新全市场指针只表示技术扫描已完成。同一交易日重复扫描时，流水线可以复用
+    上一次研究报告，因此该指针指向的运行不一定包含Layer3结果。
+    """
+
+    runs_directory = output_dir.expanduser().resolve() / "runs"
+    if not runs_directory.is_dir():
+        return None
+    candidates: list[tuple[str, str]] = []
+    for run_directory in runs_directory.iterdir():
+        if not run_directory.is_dir() or not RUN_ID_PATTERN.fullmatch(run_directory.name):
+            continue
+        required = (
+            run_directory / "manifest.json",
+            run_directory / "layer1.json",
+            run_directory / "layer2.json",
+            run_directory / "fundamental" / "layer3.json",
+        )
+        if not all(path.is_file() for path in required):
+            continue
+        try:
+            manifest = json.loads(required[0].read_text(encoding="utf-8"))
+            layer3 = json.loads(required[3].read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(manifest, dict) or manifest.get("status") != "complete":
+            continue
+        if not isinstance(layer3, dict) or not isinstance(layer3.get("records"), list):
+            continue
+        layer3_metadata = layer3.get("metadata")
+        if not isinstance(layer3_metadata, dict):
+            continue
+        if str(manifest.get("run_id", "")) != run_directory.name:
+            continue
+        if str(layer3_metadata.get("run_id", "")) != run_directory.name:
+            continue
+        end_date = str(manifest.get("end_date", "")).replace("-", "")
+        if len(end_date) != 8 or not end_date.isdigit():
+            continue
+        candidates.append((end_date, run_directory.name))
+    return max(candidates)[1] if candidates else None

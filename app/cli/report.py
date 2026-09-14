@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ..analysis.history import load_latest_full_market
+from ..analysis.history import find_latest_reportable_run
 from ..project_config import resolve_output_path
 from ..services.daily_report import generate_daily_report
 from ..services.weekly_report import generate_weekly_report
@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--run-id",
         default=None,
-        help="运行快照编号；省略时使用最近一次完整全市场运行",
+        help="运行快照编号；省略时使用最近一次具备Layer3结果的运行",
     )
     parser.add_argument(
         "--output-dir",
@@ -59,9 +59,9 @@ def main(argv: list[str] | None = None) -> int:
         run_id = args.run_id
         auto_selected = False
         if run_id is None:
-            run_id, _ = load_latest_full_market(output_dir)
+            run_id = find_latest_reportable_run(output_dir)
             if run_id is None:
-                raise RuntimeError("尚无完整全市场运行，无法生成报告")
+                raise RuntimeError("尚无具备Layer3结果的运行，无法生成报告")
             auto_selected = True
         if not RUN_ID_PATTERN.fullmatch(str(run_id)):
             raise RuntimeError(f"运行编号格式无效：{run_id}")
