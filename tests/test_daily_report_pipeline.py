@@ -42,6 +42,7 @@ def layer3_record(status: str = "complete", rank: int | None = 1) -> dict:
         },
         "financial_quant": {
             "data_coverage": 1.0,
+            "quarters_available": 8,
             "scores": {
                 "earnings_momentum": 80.0,
                 "business_quality": 72.0,
@@ -49,17 +50,35 @@ def layer3_record(status: str = "complete", rank: int | None = 1) -> dict:
         },
         "research": {
             "why_now": "行业和盈利预期同步改善",
+            "evidence": [
+                {
+                    "claim": "公司订单与盈利预期改善",
+                    "source_type": "filing",
+                    "source_name": "测试公司公告",
+                    "source_tier": 1,
+                    "published_date": "20260910",
+                    "effective_period": "2026年三季度",
+                    "confidence": 0.9,
+                    "source_url": "https://example.com/filing",
+                }
+            ],
         } if status == "complete" else None,
     }
 
 
-def prepare_run(output_directory: Path, status: str = "complete") -> Path:
-    run_directory = output_directory / "runs" / RUN_ID
+def prepare_run(
+    output_directory: Path,
+    status: str = "complete",
+    run_id: str = RUN_ID,
+    market_date: str = "20260911",
+    record: dict | None = None,
+) -> Path:
+    run_directory = output_directory / "runs" / run_id
     fundamental = run_directory / "fundamental"
     fundamental.mkdir(parents=True)
     manifest = {
-        "run_id": RUN_ID,
-        "end_date": "20260911",
+        "run_id": run_id,
+        "end_date": market_date,
         "status": "complete",
     }
     (run_directory / "manifest.json").write_text(
@@ -72,19 +91,30 @@ def prepare_run(output_directory: Path, status: str = "complete") -> Path:
         json.dumps({"metadata": manifest, "records": [{"code": "603505"}]}),
         encoding="utf-8",
     )
-    record = layer3_record(status=status, rank=1 if status == "complete" else None)
+    record = record or layer3_record(
+        status=status,
+        rank=1 if status == "complete" else None,
+    )
     (fundamental / "layer3.json").write_text(
         json.dumps(
             {
-                "metadata": {"run_id": RUN_ID, "status": status},
+                "metadata": {
+                    "run_id": run_id,
+                    "status": status,
+                    "config_version": "fundamental-layer3-v1.0",
+                },
                 "records": [record],
             }
         ),
         encoding="utf-8",
     )
+    (fundamental / "financial_quant.json").write_text(
+        json.dumps({"records": [{"code": record["code"]}]}),
+        encoding="utf-8",
+    )
     runs = output_directory / "runs"
     (runs / "latest_full_market.json").write_text(
-        json.dumps({"run_id": RUN_ID, "end_date": "20260911"}),
+        json.dumps({"run_id": run_id, "end_date": market_date}),
         encoding="utf-8",
     )
     return run_directory
@@ -114,10 +144,20 @@ class DailyReportTests(unittest.TestCase):
             json_path, markdown_path, report = generate_daily_report(run_directory)
 
             self.assertEqual(report["metadata"]["status"], "complete")
+            self.assertEqual(
+                report["metadata"]["schema_version"],
+                "daily-research-report-v3",
+            )
             self.assertEqual(report["metadata"]["layer3_counts"]["complete"], 1)
+            self.assertEqual(report["metadata"]["focus_counts"]["KEY_FOCUS"], 1)
             self.assertTrue(json_path.is_file())
             markdown = markdown_path.read_text(encoding="utf-8")
-            self.assertIn("A股上升周期每日研究报告", markdown)
+            self.assertIn("A股上升周期日报", markdown)
+            self.assertIn("30秒结论", markdown)
+            self.assertIn("筛选漏斗", markdown)
+            self.assertIn("重点关注", markdown)
+            self.assertIn("证据索引", markdown)
+            self.assertIn("https://example.com/filing", markdown)
             self.assertIn("603505", markdown)
             self.assertIn("76.2", markdown)
             self.assertIn("不构成投资建议", markdown)
@@ -141,6 +181,55 @@ class DailyReportTests(unittest.TestCase):
             self.assertEqual(report["metadata"]["layer3_counts"]["pending"], 1)
             self.assertIn("待研究", markdown_path.read_text(encoding="utf-8"))
             self.assertIsNone(report["records"][0]["final_score"])
+
+    def test_compares_rank_score_and_focus_status_with_previous_day(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            previous_record = layer3_record()
+            previous_record["rank"] = 3
+            previous_record["final_score"] = 69.0
+            previous_record["focus_status"] = "FOLLOW_UP"
+            previous_run = prepare_run(
+                output,
+                run_id="20260910-previous",
+                market_date="20260910",
+                record=previous_record,
+            )
+            generate_daily_report(previous_run)
+
+            current_run = prepare_run(
+                output,
+                run_id=RUN_ID,
+                market_date="20260911",
+            )
+            _, markdown_path, report = generate_daily_report(current_run)
+
+            comparison = report["records"][0]["comparison"]
+            self.assertEqual(report["changes"]["previous_as_of_date"], "20260910")
+            self.assertEqual(comparison["rank_change"], 2)
+            self.assertEqual(comparison["final_score_change"], 7.25)
+            self.assertTrue(comparison["focus_status_changed"])
+            markdown = markdown_path.read_text(encoding="utf-8")
+            self.assertIn("排名+2", markdown)
+            self.assertIn("持续跟踪 → 重点关注", markdown)
+
+    def test_follow_up_candidate_shows_gap_to_key_focus_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            record = layer3_record()
+            record["focus_status"] = "FOLLOW_UP"
+            record["final_score"] = 74.4
+            run_directory = prepare_run(output, record=record)
+
+            _, markdown_path, report = generate_daily_report(run_directory)
+
+            gap = report["records"][0]["score_breakdown"]["threshold_gap"]
+            self.assertAlmostEqual(gap["key_focus"], 0.6)
+            self.assertEqual(gap["next_level"], "KEY_FOCUS")
+            self.assertIn(
+                "距重点关注0.6分",
+                markdown_path.read_text(encoding="utf-8"),
+            )
 
 
 class DailyPipelineTests(unittest.TestCase):

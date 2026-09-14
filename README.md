@@ -101,7 +101,8 @@ bash scripts/openclaw_research.sh --resume
 bash scripts/daily_pipeline.sh --resume
 ```
 
-完整流水线会同时生成可读日报、QQ短报和当周汇总。也可以单独重建：
+完整流水线会同时生成可读日报、QQ短报和当周汇总。日报V3包含筛选漏斗、中文关注
+分层、评分拆解、升级距离、跨日排名变化和结构化证据索引。也可以单独重建：
 
 ```bash
 python -m app.cli.report
