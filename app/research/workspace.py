@@ -92,12 +92,28 @@ def load_research_templates(path: Path) -> dict[str, dict[str, Any]]:
 class ResearchWorkspace:
     """一个运行快照内的研究工作区；不修改Layer1/2和财务量化文件。"""
 
-    def __init__(self, run_directory: Path) -> None:
+    def __init__(
+        self,
+        run_directory: Path,
+        exchange_directory: Path | None = None,
+    ) -> None:
         self.run_directory = run_directory.expanduser().resolve()
         self.fundamental_directory = self.run_directory / "fundamental"
         self.root = self.fundamental_directory / "research"
-        self.work_items_directory = self.root / "work_items"
-        self.inbox_directory = self.root / "inbox"
+        self.exchange_directory = (
+            exchange_directory.expanduser().resolve()
+            if exchange_directory is not None
+            else None
+        )
+        run_id = self.run_directory.name
+        if self.exchange_directory is None:
+            self.work_items_directory = self.root / "work_items"
+            self.inbox_directory = self.root / "inbox"
+        else:
+            self.work_items_directory = (
+                self.exchange_directory / "work_items" / run_id
+            )
+            self.inbox_directory = self.exchange_directory / "inbox" / run_id
         self.results_directory = self.root / "results"
         self.summary_path = self.root / "execution_summary.json"
         self.aggregate_path = self.fundamental_directory / "research_results.json"

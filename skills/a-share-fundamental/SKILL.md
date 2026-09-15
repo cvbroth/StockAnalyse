@@ -19,8 +19,12 @@ Before researching, read `{baseDir}/references/scoring-rubric.md` and
   scores, contract validation, persistence, merging, and Layer3 ranking.
 - This skill owns source discovery, evidence assessment, three research scores,
   concise Chinese conclusions, and one raw JSON result per stock.
-- Work only inside the project passed as the execution workspace. Require
-  `app/cli/research.py` and `config/analysis/fundamental.toml`.
+- In standard mode, work only inside the project passed as the execution
+  workspace and require `app/cli/research.py` plus
+  `config/analysis/fundamental.toml`.
+- In boundary mode, Python on the host owns preparation and validation. Read
+  only the mounted `work_items` tree and write only one JSON file per stock to
+  the mounted `inbox` tree. Do not require or access a market database.
 - Never edit Layer1, Layer2, `financial_quant.json`, `research_request.json`,
   `market.db`, `fundamentals.db`, or files under `research/results/`.
 - Never invent a source, date, quotation, score, expectation change, catalyst,
@@ -34,11 +38,31 @@ Accept only:
 - `--run-id <id>` containing letters, digits, dot, underscore, or hyphen;
 - `--code <six-digit-code> [...]` for one or more requested stocks;
 - `--resume`, which is the default behavior.
+- `--boundary-mode`, which requires both `--run-id` and `--exchange-root`;
+- `--exchange-root <absolute-container-path>`, used only with boundary mode.
 
 Reject all other arguments. Never interpolate an argument into an arbitrary
 shell command.
 
-## Workflow
+## Boundary-mode workflow
+
+When `--boundary-mode` is present:
+
+1. Validate `run-id`, require an absolute `exchange-root`, then derive exactly
+   `<exchange-root>/work_items/<run-id>` and
+   `<exchange-root>/inbox/<run-id>`. Reject traversal components and do not use
+   any other filesystem path.
+2. Read only each stock directory's `request.json` and
+   `result.template.json`. With `--resume`, skip a stock when its corresponding
+   inbox JSON already exists.
+3. Perform steps 4-7 in the standard workflow below, one stock at a time.
+4. Atomically write only `<exchange-root>/inbox/<run-id>/<code>.json`. Do not
+   invoke Python, modify a work item, validate the contract, merge results, or
+   generate Layer3. The host pipeline performs those operations after the
+   agent exits.
+5. Report how many files were written, skipped, or could not be researched.
+
+## Standard workflow
 
 1. From the project root, choose `.venv/bin/python` when executable; otherwise
    use `python3`, then `python`. Do not install packages automatically.

@@ -27,6 +27,7 @@ class DocumentationTests(unittest.TestCase):
             "TECHNICAL_FORMULAS.md",
             "FUNDAMENTAL_FORMULAS.md",
             "REPORTING.md",
+            "DOCKER_BOUNDARY.md",
         )
         readme = (PROJECT_DIRECTORY / "README.md").read_text(encoding="utf-8")
         for filename in filenames:

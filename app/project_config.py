@@ -131,6 +131,7 @@ def save_project_config(
             project_dir, configured_fundamental
         )
     payload = {
+        **current,
         "version": CONFIG_VERSION,
         "database": _portable_path(project_dir, database),
         "fundamental_database": _portable_path(

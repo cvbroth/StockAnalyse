@@ -627,6 +627,10 @@ bash scripts/install_report_automations.sh \
 两条命令默认只预览。具体挂载、应用和验收见
 [日报、周报与频道发布](REPORTING.md)。
 
+容器还承担逐股研究时，推荐启用宿主机准备和校验的隔离交换模式，避免容器读取
+SQLite数据库或覆盖已验证结果。配置、测试及回滚见
+[Docker OpenClaw边界部署](DOCKER_BOUNDARY.md)。
+
 ## 常用维护命令
 
 强制重取最近 5 个交易日：

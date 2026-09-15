@@ -86,6 +86,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="只读校验已保存的逐股结果，不创建或修改文件",
     )
+    parser.add_argument(
+        "--exchange-dir",
+        type=Path,
+        default=None,
+        help=(
+            "隔离研究交换目录；任务写入work_items，外部工具只向inbox投递"
+        ),
+    )
     return parser
 
 
@@ -151,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         if str(metadata["run_id"]) != run_id:
             raise RuntimeError("研究请求与所选运行编号不一致")
         codes = _normalize_codes(args.code)
-        workspace = ResearchWorkspace(run_directory)
+        workspace = ResearchWorkspace(run_directory, args.exchange_dir)
         orchestrator = ResearchOrchestrator(workspace, metadata, requests)
 
         if args.validate_only:

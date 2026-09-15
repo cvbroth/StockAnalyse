@@ -8,6 +8,7 @@ from pathlib import Path
 from app.services.daily_pipeline import DailyPipeline
 from app.services.daily_report import generate_daily_report
 from app.cli.report import main as report_main
+from app.research.execution import DOCKER_OPENCLAW, ResearchExecutionConfig
 
 
 RUN_ID = "20260911-pipeline"
@@ -233,6 +234,48 @@ class DailyReportTests(unittest.TestCase):
 
 
 class DailyPipelineTests(unittest.TestCase):
+    def test_docker_research_prepares_and_validates_on_host(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "output"
+            run_directory = prepare_run(output)
+            generate_daily_report(run_directory)
+            commands: list[list[str]] = []
+
+            def runner(command: list[str]) -> int:
+                commands.append(command)
+                return 0
+
+            execution = ResearchExecutionConfig(
+                executor=DOCKER_OPENCLAW,
+                compose_directory=root / "openclaw",
+                exchange_directory=output / "openclaw_exchange",
+            )
+            pipeline = DailyPipeline(
+                root / "market.db",
+                output,
+                runner=runner,
+                research_execution=execution,
+            )
+
+            return_code, state = pipeline.run()
+
+            self.assertEqual(return_code, 0)
+            self.assertEqual(state["status"], "complete")
+            self.assertEqual(len(commands), 6)
+            self.assertIn("app.cli.research", commands[2])
+            self.assertIn("--exchange-dir", commands[2])
+            self.assertEqual(commands[3][:2], ["docker", "compose"])
+            self.assertIn("--boundary-mode", " ".join(commands[3]))
+            self.assertIn("app.cli.research", commands[4])
+            self.assertIn("app.cli.report", commands[5])
+            steps = state["stages"]["research"]["steps"]
+            self.assertEqual(
+                [step["name"] for step in steps],
+                ["prepare", "agent", "validate"],
+            )
+            self.assertIn("runtime_fingerprint", state)
+
     def test_runs_all_four_stages_and_records_complete_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"

@@ -126,10 +126,20 @@ python -m app.cli.report_weekly --week 2026-W37
 | `--output-dir` | 临时指定结果目录；通常读取项目配置 |
 | `--skip-research` | 跳过OpenClaw并生成部分报告，用于诊断其他阶段 |
 | `--report-top-n` | Markdown报告最多显示多少张候选状态卡，默认10 |
+| `--research-executor` | 本机、Docker或禁用研究执行器；默认兼容旧本机模式 |
+| `--openclaw-compose-dir` | Docker OpenClaw的Compose目录 |
+| `--openclaw-compose-service` | Docker Compose中的CLI服务名 |
+| `--openclaw-compose-action` | `run`一次性容器或`exec`常驻容器 |
+| `--research-exchange-dir` | 宿主机研究任务/inbox隔离交换目录 |
 
 如果行情截止日期与上一份终态流水线相同，程序会记录
 `market_date_unchanged`，跳过财务、研究和报告，复用上一份报告。这可避免周末、
 法定休市日或同一天重复运行时浪费外部接口与模型调用。
+
+包装脚本使用非阻塞文件锁（`flock --nonblock`）。如果systemd、旧OpenClaw任务或
+人工命令同时触发，只有第一条流水线会运行，其余以退出码75停止。每次状态还保存
+代码、分析配置、研究Skill和执行器配置的SHA-256版本指纹；指纹变化时，同一交易日
+也不会错误复用旧报告。
 
 ## 创建OpenClaw定时任务
 
@@ -203,6 +213,10 @@ openclaw automations run <任务ID> --wait --wait-timeout 6h
 bash scripts/install_host_pipeline_timer.sh
 bash scripts/install_host_pipeline_timer.sh --apply
 ```
+
+要让研究阶段也安全调用Docker OpenClaw，请先按
+[Docker OpenClaw边界部署](DOCKER_BOUNDARY.md)配置执行器和最小挂载。未配置时仍使用
+升级前的本机OpenClaw调用，不会自动切换。
 
 `install_openclaw_automation.sh` 创建的是完整研究流水线任务，而且使用
 `--no-deliver`，不会向频道发送报告。Docker版OpenClaw的日报和周报推送使用独立

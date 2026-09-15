@@ -3,5 +3,8 @@
   "database": "data/market_tx.db",
   "fundamental_database": "data/fundamentals.db",
   "output_directory": "output",
-  "data_provider": "tx"
+  "data_provider": "tx",
+  "research_execution": {
+    "executor": "local-openclaw"
+  }
 }

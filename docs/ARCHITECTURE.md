@@ -125,13 +125,19 @@ AnalysisEngine
 OpenClaw Skill不是分析核心的一部分。它读取 `work_items`，把未经信任的候选结果
 写入 `inbox`；Python执行器仍是进入 `results` 和Layer3的唯一校验边界。
 
+Docker边界模式进一步把物理权限收窄：宿主机Python准备独立exchange中的
+`work_items/<运行编号>`，以只读方式挂入容器；容器仅能写
+`inbox/<运行编号>`。行情库、基本面库、已校验results和报告目录都不进入研究容器。
+研究执行器可配置为 `local-openclaw`、`docker-openclaw` 或 `disabled`，旧项目没有
+配置时仍使用原本的本机模式。
+
 ## 每日自动流水线
 
 ```text
 app.cli.pipeline
    ├── app.cli.daily          行情更新 + Layer1/2全市场运行
    ├── app.cli.fundamentals   稀疏财务同步 + 财务量化
-   ├── OpenClaw Skill         Layer3证据研究
+   ├── 可配置研究执行器       本机OpenClaw或Docker隔离研究
    └── app.cli.report         日报 + QQ短报 + 当周汇总
 ```
 
@@ -142,6 +148,9 @@ app.cli.pipeline
 起止时间和状态原子写入 `output/pipeline_state.json`；运行快照内保存副本。研究失败
 不会破坏技术和财务结果，报告也能明确展示未完成项。相同交易日重复运行时会复用
 上一份终态报告，避免再次消耗基本面接口和模型资源。
+
+复用还要求运行版本指纹一致。指纹覆盖Python应用、三层分析配置、研究Skill和研究
+执行器配置；并发入口由 `scripts/daily_pipeline.sh` 的文件锁串行化。
 
 ## 兼容入口
 

@@ -36,12 +36,19 @@
   "database": "data/market_tx.db",
   "fundamental_database": "data/fundamentals.db",
   "output_directory": "output",
-  "data_provider": "tx"
+  "data_provider": "tx",
+  "research_execution": {
+    "executor": "local-openclaw"
+  }
 }
 ```
 
 相对路径以项目根目录为基准。`data_provider` 必须与行情数据库内绑定的数据源一致，
 不要手工改它来切换数据源。
+
+`research_execution.executor` 默认保持兼容的 `local-openclaw`。可选值为
+`local-openclaw`、`docker-openclaw` 和 `disabled`；Docker模式的完整字段及权限
+边界见[Docker OpenClaw边界部署](DOCKER_BOUNDARY.md)。
 
 ## 3. 行情更新 `app.cli.update`
 
@@ -185,6 +192,7 @@ python -m app.cli.screen --from-layer 2 \
 | `--import-results PATH` | `research/inbox` | 批量JSON或逐股JSON目录 |
 | `--resume` | 关闭 | 跳过已有complete结果，补其他状态 |
 | `--validate-only` | 关闭 | 只读校验已保存结果，不写入或重算 |
+| `--exchange-dir PATH` | 关闭 | 把只读工作项和外部inbox放入隔离交换目录 |
 
 `scripts/openclaw_research.sh` 会把其后的安全参数交给项目Skill。建议首次使用
 `--code` 验证一只，再使用 `--resume`。
@@ -219,6 +227,11 @@ python -m app.cli.screen --from-layer 2 \
 | `--output-dir PATH` | 项目配置 | 输出目录 |
 | `--skip-research` | 关闭 | 不调用OpenClaw，生成部分报告 |
 | `--report-top-n N` | 10 | 最终Markdown展示数量；至少1 |
+| `--research-executor NAME` | 项目配置/兼容默认值 | `local-openclaw`、`docker-openclaw`或`disabled` |
+| `--openclaw-compose-dir PATH` | 项目配置 | OpenClaw的Docker Compose目录 |
+| `--openclaw-compose-service NAME` | `openclaw-cli` | Compose中的OpenClaw CLI服务名 |
+| `--openclaw-compose-action ACTION` | `run` | 使用一次性`run`或常驻容器`exec` |
+| `--research-exchange-dir PATH` | `output/openclaw_exchange` | 宿主机隔离研究交换目录 |
 
 ### 历史评估 `app.cli.evaluate`
 

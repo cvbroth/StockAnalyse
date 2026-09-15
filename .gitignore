@@ -13,6 +13,8 @@ output/*.json
 output/*.csv
 output/runs/
 output/reports/
+output/openclaw_exchange/
+output/.daily_pipeline.lock
 
 # 本地密钥配置
 .env

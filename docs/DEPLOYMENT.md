@@ -322,6 +322,10 @@ bash scripts/install_report_automations.sh \
 两个安装器默认都只预览。完整只读挂载、QQBot预检和显式应用步骤见
 [日报、周报与频道发布](REPORTING.md)。
 
+若还要由宿主机流水线调用容器执行Layer3研究，不要挂载整个项目或数据库。使用
+`docker-openclaw`执行器及只读work_items/可写inbox边界，按
+[Docker OpenClaw边界部署](DOCKER_BOUNDARY.md)分层验收后再切换定时任务。
+
 ### 宿主机安装OpenClaw的旧模式
 
 确认手工完整流水线成功后，先预览任务：

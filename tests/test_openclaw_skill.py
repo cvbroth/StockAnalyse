@@ -65,6 +65,20 @@ class OpenClawSkillTests(unittest.TestCase):
         self.assertNotIn("eval ", launcher)
         self.assertNotIn("/home/chen", launcher)
 
+    def test_skill_documents_restricted_boundary_mode(self) -> None:
+        skill = (SKILL_DIRECTORY / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("--boundary-mode", skill)
+        self.assertIn("--exchange-root", skill)
+        self.assertIn("Do not require or access a market database", skill)
+        self.assertIn("invoke Python", skill)
+
+    def test_pipeline_wrapper_uses_nonblocking_file_lock(self) -> None:
+        wrapper = (PROJECT_DIRECTORY / "scripts" / "daily_pipeline.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("flock --nonblock", wrapper)
+        self.assertIn("A_SHARE_PIPELINE_LOCK_FILE", wrapper)
+
     def test_daily_automation_scripts_are_project_relative_and_safe_by_default(self) -> None:
         daily = (PROJECT_DIRECTORY / "scripts" / "daily_pipeline.sh").read_text(
             encoding="utf-8"

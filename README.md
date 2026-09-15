@@ -112,6 +112,10 @@ python -m app.cli.report_weekly --week 2026-W37
 统一报告中心位于 `output/reports/`。Docker版OpenClaw定时推送QQ的只读挂载、
 预览和安装步骤见[日报、周报与频道发布](docs/REPORTING.md)。
 
+如果Python流水线运行在Ubuntu宿主机、OpenClaw运行在Docker中，推荐使用隔离研究
+交换目录：容器只读研究任务、只写原始JSON，不能读取两个SQLite数据库。兼容切换、
+最小挂载和回滚步骤见[Docker OpenClaw边界部署](docs/DOCKER_BOUNDARY.md)。
+
 Ubuntu宿主机每日生成报告的systemd定时器也默认只预览：
 
 ```bash
@@ -145,6 +149,7 @@ bash scripts/install_openclaw_automation.sh --apply
 - [OpenClaw Layer3研究接入](docs/OPENCLAW.md)
 - [每日自动流水线](docs/AUTOMATION.md)
 - [日报、周报与频道发布](docs/REPORTING.md)
+- [Docker OpenClaw边界部署](docs/DOCKER_BOUNDARY.md)
 - [常见故障排查](docs/TROUBLESHOOTING.md)
 - [开发与测试](docs/DEVELOPMENT.md)
 
@@ -185,6 +190,8 @@ reports/weekly/<YYYY-Www>/report.md
 reports/weekly/<YYYY-Www>/qq.txt
 reports/latest/daily-qq.txt
 reports/latest/weekly-qq.txt
+openclaw_exchange/work_items/<运行编号>/<股票代码>/
+openclaw_exchange/inbox/<运行编号>/<股票代码>.json
 pipeline_state.json
 ```
 

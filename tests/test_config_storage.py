@@ -110,6 +110,37 @@ class ProjectConfigTests(unittest.TestCase):
             )
             self.assertEqual(payload["output_directory"], "output")
 
+    def test_saving_data_source_preserves_research_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            config_path = project / "config" / "project.json"
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "research_execution": {
+                            "executor": "docker-openclaw",
+                            "compose_directory": "/srv/openclaw",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            save_project_config(
+                project / "data" / "market.db",
+                "tx",
+                project_dir=project,
+                config_path=config_path,
+            )
+
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                payload["research_execution"]["executor"],
+                "docker-openclaw",
+            )
+
 
 class DatabaseQualityTests(unittest.TestCase):
     def test_complete_database_passes(self) -> None:

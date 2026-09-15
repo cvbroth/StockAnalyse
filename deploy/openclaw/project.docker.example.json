@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "database": "data/market_tx.db",
+  "fundamental_database": "data/fundamentals.db",
+  "output_directory": "output",
+  "data_provider": "tx",
+  "research_execution": {
+    "executor": "docker-openclaw",
+    "docker_binary": "docker",
+    "compose_directory": "/home/chen/openclaw",
+    "compose_service": "openclaw-cli",
+    "compose_action": "run",
+    "container_project_directory": "/workspace/stockanalyse",
+    "exchange_directory": "output/openclaw_exchange",
+    "container_exchange_directory": "/research-exchange"
+  }
+}

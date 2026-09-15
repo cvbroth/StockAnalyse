@@ -1,0 +1,19 @@
+# Merge these mounts into the actual OpenClaw CLI service. The service name
+# must match research_execution.compose_service in config/project.json.
+services:
+  openclaw-cli:
+    volumes:
+      # Skill and its scoring/contract references are read-only.
+      - type: bind
+        source: ${STOCKANALYSE_SKILL_DIR}
+        target: /workspace/stockanalyse/skills/a-share-fundamental
+        read_only: true
+      # Python prepares immutable work items here.
+      - type: bind
+        source: ${STOCKANALYSE_EXCHANGE_DIR}/work_items
+        target: /research-exchange/work_items
+        read_only: true
+      # OpenClaw can write only raw per-stock JSON submissions here.
+      - type: bind
+        source: ${STOCKANALYSE_EXCHANGE_DIR}/inbox
+        target: /research-exchange/inbox
