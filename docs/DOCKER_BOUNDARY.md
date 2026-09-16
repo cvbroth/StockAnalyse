@@ -74,6 +74,7 @@ docker compose run -T --rm openclaw-cli skills install \
 | 字段 | 含义 |
 |---|---|
 | `executor` | `local-openclaw`、`docker-openclaw`或`disabled` |
+| `research_model` | Layer3显式使用的OpenClaw `provider/model`；省略则继承全局默认 |
 | `compose_directory` | OpenClaw的Docker Compose目录 |
 | `compose_service` | 提供OpenClaw命令行入口的服务名 |
 | `compose_action` | `run`创建一次性容器；`exec`进入已运行容器 |
@@ -87,7 +88,11 @@ docker compose run -T --rm openclaw-cli skills install \
 ```bash
 cd /home/chen/openclaw
 docker compose config --services
+docker compose run -T --rm openclaw-cli models list --json
 ```
+
+先从模型列表复制准确标识，再写入 `research_model`。不要根据产品显示名称猜测
+provider前缀；模型变化会进入流水线版本指纹，防止复用另一模型生成的同日报告。
 
 ## 4. 分层验收
 
@@ -98,6 +103,7 @@ python -m app.cli.pipeline --help
 python -m app.cli.pipeline \
   --run-id <已有运行编号> \
   --research-executor docker-openclaw \
+  --research-model deepseek/actual-model-id \
   --openclaw-compose-dir /home/chen/openclaw \
   --resume
 ```

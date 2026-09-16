@@ -54,6 +54,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--research-model",
+        default=None,
+        help=(
+            "Layer3 OpenClaw研究显式使用的provider/model；"
+            "省略时读取项目配置或继承OpenClaw默认模型"
+        ),
+    )
+    parser.add_argument(
         "--openclaw-compose-dir",
         type=Path,
         default=None,
@@ -89,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         research_execution, research_source = resolve_research_execution(
             output_directory,
             executor=args.research_executor,
+            research_model=args.research_model,
             compose_directory=args.openclaw_compose_dir,
             compose_service=args.openclaw_compose_service,
             compose_action=args.openclaw_compose_action,
@@ -118,6 +127,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"结果目录：{output_source} → {output_directory}")
     print(
         f"研究执行器：{research_source} → {research_execution.executor}"
+    )
+    print(
+        "研究模型："
+        + (research_execution.research_model or "继承OpenClaw默认模型")
     )
     print(f"流水线状态：{state['status']}；运行编号：{state.get('run_id')}")
     print(f"状态文件：{pipeline.state_path}")

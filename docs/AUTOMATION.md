@@ -127,6 +127,7 @@ python -m app.cli.report_weekly --week 2026-W37
 | `--skip-research` | 跳过OpenClaw并生成部分报告，用于诊断其他阶段 |
 | `--report-top-n` | Markdown报告最多显示多少张候选状态卡，默认10 |
 | `--research-executor` | 本机、Docker或禁用研究执行器；默认兼容旧本机模式 |
+| `--research-model` | 仅为Layer3研究指定OpenClaw `provider/model` |
 | `--openclaw-compose-dir` | Docker OpenClaw的Compose目录 |
 | `--openclaw-compose-service` | Docker Compose中的CLI服务名 |
 | `--openclaw-compose-action` | `run`一次性容器或`exec`常驻容器 |
@@ -140,6 +141,10 @@ python -m app.cli.report_weekly --week 2026-W37
 人工命令同时触发，只有第一条流水线会运行，其余以退出码75停止。每次状态还保存
 代码、分析配置、研究Skill和执行器配置的SHA-256版本指纹；指纹变化时，同一交易日
 也不会错误复用旧报告。
+
+研究模型属于执行器配置，也进入版本指纹。可在 `config/project.json` 中固定
+`research_execution.research_model`，让OpenClaw日常聊天继续使用全局默认模型，
+而Layer3研究始终使用单独的模型。模型标识必须来自 `openclaw models list`。
 
 ## 创建OpenClaw定时任务
 

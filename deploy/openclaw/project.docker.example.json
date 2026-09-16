@@ -6,6 +6,7 @@
   "data_provider": "tx",
   "research_execution": {
     "executor": "docker-openclaw",
+    "research_model": "deepseek/replace-with-model-id-from-openclaw",
     "docker_binary": "docker",
     "compose_directory": "/home/chen/openclaw",
     "compose_service": "openclaw-cli",

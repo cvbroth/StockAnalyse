@@ -121,6 +121,7 @@ class ProjectConfigTests(unittest.TestCase):
                         "version": 1,
                         "research_execution": {
                             "executor": "docker-openclaw",
+                            "research_model": "deepseek/test-model",
                             "compose_directory": "/srv/openclaw",
                         },
                     }
@@ -139,6 +140,10 @@ class ProjectConfigTests(unittest.TestCase):
             self.assertEqual(
                 payload["research_execution"]["executor"],
                 "docker-openclaw",
+            )
+            self.assertEqual(
+                payload["research_execution"]["research_model"],
+                "deepseek/test-model",
             )
 
 

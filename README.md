@@ -95,6 +95,10 @@ bash scripts/openclaw_research.sh --code 603505
 bash scripts/openclaw_research.sh --resume
 ```
 
+`config/project.json` 可为Layer3单独设置 `research_execution.research_model`。这样
+OpenClaw日常聊天可以继续使用全局默认模型，而股票研究显式使用另一模型；模型切换
+也会进入流水线版本指纹，避免错误复用旧报告。
+
 执行包含行情、筛选、基本面、OpenClaw和报告的完整每日流水线：
 
 ```bash

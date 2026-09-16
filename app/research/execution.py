@@ -31,6 +31,7 @@ class ResearchExecutionConfig:
     executor: str = LOCAL_OPENCLAW
     openclaw_binary: str = "openclaw"
     docker_binary: str = "docker"
+    research_model: str | None = None
     compose_directory: Path | None = None
     compose_service: str = "openclaw-cli"
     compose_action: str = "run"
@@ -47,6 +48,15 @@ class ResearchExecutionConfig:
             raise ValueError("compose_action 只能是 run 或 exec")
         if not self.compose_service.strip():
             raise ValueError("compose_service 不能为空")
+        if self.research_model is not None:
+            normalized_model = str(self.research_model).strip()
+            if (
+                not normalized_model
+                or "\x00" in normalized_model
+                or any(character.isspace() for character in normalized_model)
+            ):
+                raise ValueError("research_model 必须是无空白字符的模型标识")
+            object.__setattr__(self, "research_model", normalized_model)
         for label, value in (
             ("container_project_directory", self.container_project_directory),
             ("container_exchange_directory", self.container_exchange_directory),
@@ -71,10 +81,12 @@ class ResearchExecutionConfig:
             return {
                 "executor": self.executor,
                 "openclaw_binary": self.openclaw_binary,
+                "research_model": self.research_model,
             }
         return {
             "executor": self.executor,
             "docker_binary": self.docker_binary,
+            "research_model": self.research_model,
             "compose_directory": (
                 str(self.compose_directory) if self.compose_directory else None
             ),
@@ -96,16 +108,18 @@ class ResearchExecutionConfig:
             raise RuntimeError("研究执行器已禁用")
         if self.executor == LOCAL_OPENCLAW:
             binary = shutil.which(self.openclaw_binary) or self.openclaw_binary
-            return [
+            command = [
                 binary,
                 "agent",
                 "exec",
                 f"/a-share-fundamental --run-id {run_id} --resume",
                 "--cwd",
                 str(PROJECT_DIR),
-                "--timeout",
-                "0",
             ]
+            if self.research_model:
+                command.extend(["--model", self.research_model])
+            command.extend(["--timeout", "0"])
+            return command
 
         if self.compose_directory is None:
             raise RuntimeError(
@@ -142,10 +156,11 @@ class ResearchExecutionConfig:
                 ),
                 "--cwd",
                 self.container_project_directory,
-                "--timeout",
-                "0",
             ]
         )
+        if self.research_model:
+            command.extend(["--model", self.research_model])
+        command.extend(["--timeout", "0"])
         return command
 
 
@@ -153,6 +168,7 @@ def resolve_research_execution(
     output_directory: Path,
     *,
     executor: str | None = None,
+    research_model: str | None = None,
     compose_directory: Path | None = None,
     compose_service: str | None = None,
     compose_action: str | None = None,
@@ -185,6 +201,13 @@ def resolve_research_execution(
         if raw.get("executor")
         else "兼容默认值"
     )
+    selected_research_model = (
+        research_model
+        or os.environ.get("A_SHARE_RESEARCH_MODEL")
+        or raw.get("research_model")
+    )
+    if selected_research_model is not None:
+        selected_research_model = str(selected_research_model).strip() or None
 
     raw_compose_directory = (
         compose_directory
@@ -222,6 +245,7 @@ def resolve_research_execution(
         executor=str(selected_executor),
         openclaw_binary=str(raw.get("openclaw_binary", "openclaw")),
         docker_binary=str(raw.get("docker_binary", "docker")),
+        research_model=selected_research_model,
         compose_directory=resolved_compose_directory,
         compose_service=(
             compose_service

@@ -5,6 +5,7 @@
   "output_directory": "output",
   "data_provider": "tx",
   "research_execution": {
-    "executor": "local-openclaw"
+    "executor": "local-openclaw",
+    "research_model": null
   }
 }

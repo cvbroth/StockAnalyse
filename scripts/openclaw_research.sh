@@ -14,6 +14,13 @@ if (( $# > 0 )); then
   message="${message} $*"
 fi
 
-exec openclaw agent exec "${message}" \
-  --cwd "${project_directory}" \
-  --timeout 0
+openclaw_command=(
+  openclaw agent exec "${message}"
+  --cwd "${project_directory}"
+)
+if [[ -n "${A_SHARE_RESEARCH_MODEL:-}" ]]; then
+  openclaw_command+=(--model "${A_SHARE_RESEARCH_MODEL}")
+fi
+openclaw_command+=(--timeout 0)
+
+exec "${openclaw_command[@]}"

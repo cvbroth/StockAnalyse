@@ -226,6 +226,15 @@ bash scripts/openclaw_research.sh --code 603505
 python -m app.cli.research --validate-only
 ```
 
+如果日常OpenClaw使用默认模型，而Layer3需要固定另一模型，先通过
+`openclaw models list --json` 确认准确的 `provider/model`，再写入
+`config/project.json` 的 `research_execution.research_model`。临时单股验收也可以：
+
+```bash
+A_SHARE_RESEARCH_MODEL=deepseek/actual-model-id \
+bash scripts/openclaw_research.sh --code 603505
+```
+
 股票代码必须属于本次Top 10研究任务。单股成功后再续跑其余候选：
 
 ```bash

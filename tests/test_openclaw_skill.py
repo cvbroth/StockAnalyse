@@ -62,6 +62,8 @@ class OpenClawSkillTests(unittest.TestCase):
         self.assertIn("/a-share-fundamental", launcher)
         self.assertIn('--cwd "${project_directory}"', launcher)
         self.assertIn("--timeout 0", launcher)
+        self.assertIn("A_SHARE_RESEARCH_MODEL", launcher)
+        self.assertIn('--model "${A_SHARE_RESEARCH_MODEL}"', launcher)
         self.assertNotIn("eval ", launcher)
         self.assertNotIn("/home/chen", launcher)
 

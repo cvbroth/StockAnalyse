@@ -67,6 +67,13 @@ openclaw skills install ./skills/a-share-fundamental --as a-share-fundamental
 bash scripts/openclaw_research.sh --code 603505
 ```
 
+若OpenClaw全局默认是日常使用的模型，可以只为这次研究显式覆盖：
+
+```bash
+A_SHARE_RESEARCH_MODEL=deepseek/actual-model-id \
+bash scripts/openclaw_research.sh --code 603505
+```
+
 参数含义：
 
 - `bash`：用Bash解释脚本，不依赖脚本是否具有可执行位。
@@ -78,6 +85,7 @@ bash scripts/openclaw_research.sh --code 603505
 ```bash
 openclaw agent exec "/a-share-fundamental --code 603505" \
   --cwd <当前项目根目录> \
+  --model <可选的A_SHARE_RESEARCH_MODEL> \
   --timeout 0
 ```
 
@@ -86,6 +94,7 @@ openclaw agent exec "/a-share-fundamental --code 603505" \
 - `agent exec`：运行一次适合服务器和脚本调用的独立Agent任务。
 - `/a-share-fundamental`：明确调用本项目Skill。
 - `--cwd`：把项目根目录同时设为OpenClaw执行工作区和工具工作目录。
+- `--model`：仅当设置 `A_SHARE_RESEARCH_MODEL` 时加入，不修改OpenClaw全局默认。
 - `--timeout 0`：关闭 `agent exec` 默认的600秒总时限。多只股票研究可能超过
   10分钟，所以由 `screen` 或人工决定何时中断。
 

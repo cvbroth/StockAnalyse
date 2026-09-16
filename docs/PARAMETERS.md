@@ -38,7 +38,8 @@
   "output_directory": "output",
   "data_provider": "tx",
   "research_execution": {
-    "executor": "local-openclaw"
+    "executor": "local-openclaw",
+    "research_model": null
   }
 }
 ```
@@ -48,7 +49,13 @@
 
 `research_execution.executor` 默认保持兼容的 `local-openclaw`。可选值为
 `local-openclaw`、`docker-openclaw` 和 `disabled`；Docker模式的完整字段及权限
-边界见[Docker OpenClaw边界部署](DOCKER_BOUNDARY.md)。
+边界见[Docker OpenClaw边界部署](DOCKER_BOUNDARY.md)。`research_model` 使用
+OpenClaw列出的 `provider/model`；为 `null` 或省略时继承OpenClaw全局默认模型。
+研究模型的解析优先级为：
+
+```text
+--research-model > A_SHARE_RESEARCH_MODEL > project.json > OpenClaw默认模型
+```
 
 ## 3. 行情更新 `app.cli.update`
 
@@ -228,6 +235,7 @@ python -m app.cli.screen --from-layer 2 \
 | `--skip-research` | 关闭 | 不调用OpenClaw，生成部分报告 |
 | `--report-top-n N` | 10 | 最终Markdown展示数量；至少1 |
 | `--research-executor NAME` | 项目配置/兼容默认值 | `local-openclaw`、`docker-openclaw`或`disabled` |
+| `--research-model PROVIDER/MODEL` | 项目配置/OpenClaw默认值 | 仅为Layer3研究显式选择模型 |
 | `--openclaw-compose-dir PATH` | 项目配置 | OpenClaw的Docker Compose目录 |
 | `--openclaw-compose-service NAME` | `openclaw-cli` | Compose中的OpenClaw CLI服务名 |
 | `--openclaw-compose-action ACTION` | `run` | 使用一次性`run`或常驻容器`exec` |
