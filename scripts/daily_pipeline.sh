@@ -16,16 +16,24 @@ else
   echo "警告：系统没有flock，无法启用重复运行保护。" >&2
 fi
 
-if [[ -x "${project_directory}/.venv/bin/python" ]]; then
-  python_command="${project_directory}/.venv/bin/python"
+if [[ -n "${PIPELINE_PYTHON:-}" ]]; then
+    if [[ ! -x "${PIPELINE_PYTHON}" ]]; then
+        echo "指定的 PIPELINE_PYTHON 不存在或不可执行: ${PIPELINE_PYTHON}" >&2
+        exit 2
+    fi
+    python_command="${PIPELINE_PYTHON}"
+elif [[ -x "${project_directory}/.venv/bin/python" ]]; then
+    python_command="${project_directory}/.venv/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
-  python_command="$(command -v python3)"
+    python_command="$(command -v python3)"
 elif command -v python >/dev/null 2>&1; then
-  python_command="$(command -v python)"
+    python_command="$(command -v python)"
 else
-  echo "未找到Python。请先创建项目虚拟环境并安装依赖。" >&2
-  exit 2
+    echo "未找到 Python。请先创建项目虚拟环境并安装依赖。" >&2
+    exit 2
 fi
+
+echo "使用 Python: ${python_command}" >&2
 
 cd "${project_directory}"
 exec "${python_command}" -m app.cli.pipeline "$@"
