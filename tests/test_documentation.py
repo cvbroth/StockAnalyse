@@ -23,6 +23,7 @@ class DocumentationTests(unittest.TestCase):
     def test_reference_documents_exist_and_are_linked_from_readme(self) -> None:
         filenames = (
             "DEPLOYMENT.md",
+            "DEPLOYMENT_MODES.md",
             "PARAMETERS.md",
             "TECHNICAL_FORMULAS.md",
             "FUNDAMENTAL_FORMULAS.md",

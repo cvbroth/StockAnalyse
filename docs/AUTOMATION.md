@@ -148,6 +148,23 @@ python -m app.cli.report_weekly --week 2026-W37
 
 ## 创建OpenClaw定时任务
 
+OpenClaw通过Docker运行并作为个人服务器总控制器时，使用Managed安装器。它在
+Gateway容器内部运行流水线，强制使用容器内Python和`local-openclaw`，默认工作日
+18:01触发；任务完成后才输出当天QQ短报：
+
+```bash
+bash scripts/check_openclaw_managed.sh
+bash scripts/install_openclaw_managed.sh
+bash scripts/install_openclaw_managed.sh \
+  --qq-target '<QQ接收目标>' \
+  --apply
+```
+
+已存在同名任务时，安装器会原地更新任务定义，不重复创建。完整容器构建和挂载说明
+见[部署模式](DEPLOYMENT_MODES.md)。
+
+下面的旧安装器用于OpenClaw直接安装在宿主机的兼容模式。
+
 安装脚本默认只预览，不修改OpenClaw：
 
 ```bash

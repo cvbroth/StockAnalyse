@@ -1,0 +1,27 @@
+# Merge this service fragment into the real OpenClaw Gateway service.
+# Change the service name if the actual Compose project does not use
+# "openclaw-gateway".
+services:
+  openclaw-gateway:
+    build:
+      context: ${STOCKANALYSE_PROJECT_DIR}
+      dockerfile: deploy/openclaw-managed/Dockerfile
+      args:
+        OPENCLAW_IMAGE: ${OPENCLAW_IMAGE}
+        OPENCLAW_RUNTIME_USER: ${OPENCLAW_RUNTIME_USER:-node}
+    environment:
+      TZ: ${OPENCLAW_TZ:-Asia/Shanghai}
+      PIPELINE_PYTHON: /opt/stockanalyse-venv/bin/python
+      A_SHARE_RESEARCH_EXECUTOR: local-openclaw
+      # Leave empty to inherit the normal OpenClaw model.
+      A_SHARE_RESEARCH_MODEL: ${A_SHARE_RESEARCH_MODEL:-}
+    volumes:
+      - type: bind
+        source: ${STOCKANALYSE_PROJECT_DIR}
+        target: /workspace/stockanalyse
+        read_only: false
+
+    # Deliberately absent:
+    # - privileged: true
+    # - /var/run/docker.sock
+    # - broad / or /home mounts

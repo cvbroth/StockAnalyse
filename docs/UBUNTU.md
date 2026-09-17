@@ -46,7 +46,21 @@ bash scripts/install_openclaw_automation.sh --apply
 
 完整说明见 [每日自动流水线](AUTOMATION.md)。
 
-OpenClaw通过Docker部署时，由systemd用户定时器运行宿主机Python流水线：
+OpenClaw通过Docker部署在个人内网服务器时，推荐让Gateway统一调度。先把
+`deploy/openclaw-managed/` 中的镜像和挂载配置合并到实际Compose，再在Gateway
+容器内执行：
+
+```bash
+bash scripts/check_openclaw_managed.sh
+bash scripts/install_openclaw_managed.sh
+bash scripts/install_openclaw_managed.sh --qq-target '<QQ接收目标>' --apply
+```
+
+Managed模式使用容器自己的 `/opt/stockanalyse-venv/bin/python`，不要挂载宿主机
+`.venv`。完整说明见[部署模式](DEPLOYMENT_MODES.md)。
+
+如果选择Host Managed或Docker Boundary，再由systemd用户定时器运行宿主机Python
+流水线：
 
 ```bash
 bash scripts/install_host_pipeline_timer.sh

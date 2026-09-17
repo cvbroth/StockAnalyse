@@ -1,5 +1,15 @@
 # 参数手册
 
+部署层环境变量和三种调度模式见[部署模式](DEPLOYMENT_MODES.md)。Managed模式常用：
+
+| 环境变量 | 含义 |
+|---|---|
+| `PIPELINE_PYTHON` | Gateway容器内项目Python，默认 `/opt/stockanalyse-venv/bin/python` |
+| `A_SHARE_RESEARCH_EXECUTOR` | Managed固定为 `local-openclaw` |
+| `A_SHARE_RESEARCH_MODEL` | 可选的Layer3模型标识；为空则继承OpenClaw默认 |
+| `A_SHARE_MANAGED_INCLUDE_WEEKLY` | 周五完成通知是否附带周报，`1`开启、`0`关闭 |
+| `A_SHARE_PIPELINE_LOG_DIR` | Managed流水线详细日志目录 |
+
 本文列出稳定CLI和三份TOML配置的参数。任何时候都可以用
 `python -m <入口> --help` 查看当前版本的命令行定义。
 

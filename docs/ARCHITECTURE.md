@@ -30,6 +30,10 @@ Layer3研究任务另外经过 `app.research`。这一层只编排外部结构�
 - `app.services.report_publication`：归档日报/周报、生成QQ短报与最新版只读出口。
 - `scripts/daily_pipeline.sh`：完整流水线的项目相对路径启动器。
 - `scripts/install_openclaw_automation.sh`：OpenClaw定时任务预览与显式安装器。
+- `scripts/install_openclaw_managed.sh`：Gateway容器统一调度模式的幂等安装器。
+- `scripts/check_openclaw_managed.sh`：容器Python、OpenClaw、目录权限与危险挂载预检。
+- `scripts/run_managed_daily.sh`：记录详细日志并在流水线完成后输出日报/周报短消息。
+- `scripts/show_pipeline_status.sh`：供人工或OpenClaw读取最近流水线的简明状态。
 - `app/analysis/`：不访问网络和数据库的纯分析逻辑。
 - `app/legacy/`：只为旧版直接联网命令保留。
 
@@ -141,7 +145,8 @@ app.cli.pipeline
    └── app.cli.report         日报 + QQ短报 + 当周汇总
 ```
 
-报告事实由Python从快照确定性生成。Docker OpenClaw只读挂载 `output/reports`，定时
+报告事实由Python从快照确定性生成。OpenClaw Managed在流水线完成后读取同一项目的
+短报；Docker Boundary模式下OpenClaw只读挂载 `output/reports`，定时
 输出已经生成的短报并交给频道插件；它不重新计算分数，也不访问两个SQLite数据库。
 
 编排器不把四个阶段揉进同一模块，而是以子进程调用稳定CLI边界。阶段命令、返回码、

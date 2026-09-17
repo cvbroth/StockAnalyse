@@ -113,12 +113,22 @@ python -m app.cli.report
 python -m app.cli.report_weekly --week 2026-W37
 ```
 
-统一报告中心位于 `output/reports/`。Docker版OpenClaw定时推送QQ的只读挂载、
-预览和安装步骤见[日报、周报与频道发布](docs/REPORTING.md)。
+统一报告中心位于 `output/reports/`。个人内网服务器推荐使用 **OpenClaw Managed**：
+Gateway容器统一调度流水线、调用自己的Agent并在完成后推送QQ，不需要容器内再调用
+Docker。宿主机systemd和严格Docker Boundary仍作为可选模式保留。模式比较和迁移
+步骤见[部署模式](docs/DEPLOYMENT_MODES.md)。
 
-如果Python流水线运行在Ubuntu宿主机、OpenClaw运行在Docker中，推荐使用隔离研究
-交换目录：容器只读研究任务、只写原始JSON，不能读取两个SQLite数据库。兼容切换、
-最小挂载和回滚步骤见[Docker OpenClaw边界部署](docs/DOCKER_BOUNDARY.md)。
+Managed模式的容器镜像、挂载和环境变量示例位于 `deploy/openclaw-managed/`。容器内
+先运行预检，再预览和安装工作日18:01任务：
+
+```bash
+bash scripts/check_openclaw_managed.sh
+bash scripts/install_openclaw_managed.sh
+bash scripts/install_openclaw_managed.sh --qq-target '<QQ目标>' --apply
+```
+
+如果需要多用户或低信任隔离，使用[Docker OpenClaw边界部署](docs/DOCKER_BOUNDARY.md)：
+容器只读研究任务、只写原始JSON，不能读取两个SQLite数据库。
 
 Ubuntu宿主机每日生成报告的systemd定时器也默认只预览：
 
@@ -127,7 +137,7 @@ bash scripts/install_host_pipeline_timer.sh
 bash scripts/install_host_pipeline_timer.sh --apply
 ```
 
-默认工作日18:00自动执行的OpenClaw任务可先预览、再创建：
+OpenClaw直接安装在宿主机的兼容任务可先预览、再创建：
 
 ```bash
 bash scripts/install_openclaw_automation.sh
@@ -140,6 +150,7 @@ bash scripts/install_openclaw_automation.sh --apply
 ## 文档
 
 - [完整部署教程](docs/DEPLOYMENT.md)
+- [部署模式与选择](docs/DEPLOYMENT_MODES.md)
 - [命令行与配置参数手册](docs/PARAMETERS.md)
 - [完整使用手册](docs/USER_GUIDE.md)
 - [Windows安装与运行](docs/WINDOWS.md)

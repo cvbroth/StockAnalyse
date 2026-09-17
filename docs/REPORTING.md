@@ -115,9 +115,19 @@ QQ短报默认只展示前三名、中文关注级别、升级距离和首要风
 当前周报只汇总已经存在的报告事实，不补算未来收益。历史20/60日效果仍使用
 `app.cli.evaluate`，避免把事后数据混入当时的研究报告。
 
-## 5. Docker OpenClaw只读接入
+## 5. OpenClaw Managed完成后推送
 
-### 5.1 宿主机定时生成报告
+个人内网服务器使用Managed模式时，不需要等待固定的19:00日报任务。Automation运行
+`scripts/run_managed_daily.sh`，流水线和报告成功后才输出当天 `qq.txt`，由同一个
+命令型任务投递到QQ。周五同一次完成通知会附带本周短报。
+
+包装脚本把流水线详细输出写到 `output/logs/`，成功时只向Automation输出短报，失败
+时输出退出码和最后40行日志。休市日或报告日期不匹配时只输出 `NO_REPLY`，不会误发
+旧报告。安装步骤见[部署模式](DEPLOYMENT_MODES.md)。
+
+## 6. Docker OpenClaw只读接入
+
+### 6.1 宿主机定时生成报告
 
 股票数据库和Python环境位于Ubuntu宿主机，因此由systemd用户定时器运行完整流水线，
 OpenClaw不直接操作数据库。安装器默认只预览：
@@ -151,7 +161,7 @@ journalctl --user -u a-share-daily-pipeline.service -n 200 --no-pager
 服务器用户退出登录后仍需运行用户定时器时，可由管理员检查并启用该用户的linger。
 这属于服务器级权限设置，项目安装器不会自动修改。
 
-### 5.2 只读报告挂载
+### 6.2 只读报告挂载
 
 先至少生成一次报告：
 
@@ -184,7 +194,7 @@ docker compose \
 报告不是当天最新报告时，脚本输出 `NO_REPLY`，OpenClaw不会推送过期日报。周报按
 容器当前的ISO周检查，因此容器时区必须为 `Asia/Shanghai`。
 
-## 6. QQBot和定时推送
+## 7. QQBot和定时推送
 
 QQBot应先在OpenClaw中完成插件、账号和接收目标配置。项目不保存AppSecret、Token
 或QQ目标。检查频道：
@@ -245,7 +255,7 @@ OpenClaw官方参考：
 - [Automations CLI](https://docs.openclaw.ai/cli/cron)
 - [QQBot](https://docs.openclaw.ai/channels/qqbot)
 
-## 7. 推荐时间顺序
+## 8. Host Managed推荐时间顺序
 
 ```text
 18:00  宿主机完整每日流水线开始

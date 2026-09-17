@@ -1,5 +1,8 @@
 # Docker OpenClaw边界部署
 
+本页描述可选的高隔离部署模式。个人内网服务器的默认推荐方案是
+[OpenClaw Managed](DEPLOYMENT_MODES.md)，各种模式可以在不重建行情库的情况下切换。
+
 本模式把可信的数据处理留在Ubuntu宿主机，只让Docker中的OpenClaw完成需要模型和
 网页访问的逐股研究：
 

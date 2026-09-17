@@ -111,6 +111,48 @@ class OpenClawSkillTests(unittest.TestCase):
         self.assertIn("/reports/print-latest.sh", installer)
         self.assertNotIn("eval ", installer)
 
+    def test_managed_mode_is_container_native_and_safe_by_default(self) -> None:
+        installer = (
+            PROJECT_DIRECTORY / "scripts" / "install_openclaw_managed.sh"
+        ).read_text(encoding="utf-8")
+        healthcheck = (
+            PROJECT_DIRECTORY / "scripts" / "check_openclaw_managed.sh"
+        ).read_text(encoding="utf-8")
+        wrapper = (
+            PROJECT_DIRECTORY / "scripts" / "run_managed_daily.sh"
+        ).read_text(encoding="utf-8")
+        status_reader = (
+            PROJECT_DIRECTORY / "scripts" / "show_pipeline_status.sh"
+        ).read_text(encoding="utf-8")
+        compose = (
+            PROJECT_DIRECTORY
+            / "deploy"
+            / "openclaw-managed"
+            / "docker-compose.override.example.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("apply=false", installer)
+        self.assertIn("1 18 * * 1-5", installer)
+        self.assertIn("PIPELINE_PYTHON", installer)
+        self.assertIn("A_SHARE_RESEARCH_EXECUTOR=local-openclaw", installer)
+        self.assertIn("--command-env", installer)
+        self.assertIn("automations edit", installer)
+        self.assertIn("--announce", installer)
+        self.assertIn("--no-deliver", installer)
+        self.assertIn("/opt/stockanalyse-venv/bin/python", healthcheck)
+        self.assertIn("--smoke-agent", healthcheck)
+        self.assertIn("print-latest.sh", wrapper)
+        self.assertIn("A_SHARE_MANAGED_INCLUDE_WEEKLY", wrapper)
+        self.assertIn("pipeline_state.json", status_reader)
+        self.assertIn("PIPELINE_PYTHON", status_reader)
+        self.assertIn("--no-weekly", installer)
+        self.assertIn("NO_REPLY", (PROJECT_DIRECTORY / "docs" / "DEPLOYMENT_MODES.md").read_text(encoding="utf-8"))
+        self.assertNotIn("source: /var/run/docker.sock", compose)
+        self.assertNotIn("\n    privileged:", compose)
+        self.assertNotIn(
+            "eval ", installer + healthcheck + wrapper + status_reader
+        )
+
     def test_host_pipeline_timer_is_safe_by_default(self) -> None:
         installer = (
             PROJECT_DIRECTORY / "scripts" / "install_host_pipeline_timer.sh"
